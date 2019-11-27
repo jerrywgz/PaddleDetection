@@ -382,3 +382,40 @@ class ArrangeTestYOLO(BaseOperator):
         im_shape = np.array((h, w))
         outs = (im, im_shape, im_id)
         return outs
+
+
+@register_op
+class ArrangeTrainCornerNet(BaseOperator):
+    """
+    Transform dict to the tuple format needed for training.
+    """
+
+    def __init__(self):
+        super(ArrangeTrainCornerNet, self).__init__()
+
+    def __call__(self, sample, context=None):
+        """
+        Args:
+            sample: a dict which contains image
+                    info and annotation info.
+            context: a dict which contains additional info.
+        Returns:
+            sample: a tuple containing the following items:
+                (image, gt_bbox, gt_class, gt_score, is_crowd,
+                 im_info, gt_masks)
+        """
+        im = sample['image']
+        im_id = sample['im_id']
+        gt_bbox = sample['gt_bbox']
+        gt_class = sample['gt_class']
+        tl_heatmaps = sample['tl_heatmaps']
+        br_heatmaps = sample['br_heatmaps']
+        tl_regrs = sample['tl_regrs']
+        br_regrs = sample['br_regrs']
+        tl_tags = sample['tl_tags']
+        br_tags = sample['br_tags']
+        tag_mask = sample['tag_mask']
+
+        outs = (im, im_id, gt_bbox, gt_class, tl_heatmaps, br_heatmaps,
+                tl_regrs, br_regrs, tl_tags, br_tags, tag_mask)
+        return outs

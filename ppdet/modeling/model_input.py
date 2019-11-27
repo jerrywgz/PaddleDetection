@@ -36,6 +36,7 @@ feed_var_def = [
     {'name': 'im_shape',      'shape': [3],  'dtype': 'float32', 'lod_level': 0},
     {'name': 'im_size',       'shape': [2],  'dtype': 'int32',   'lod_level': 0},
 ]
+
 # yapf: enable
 
 
@@ -60,6 +61,57 @@ def create_feed(feed, iterable=False, sub_prog_feed=False):
         feed_var_map['gt_score']['lod_level'] = 0
         feed_var_map['gt_box']['lod_level'] = 0
         feed_var_map['is_difficult']['lod_level'] = 0
+
+    if getattr(feed, 'max_tag_len', None) is not None:
+        max_tag_len = feed.max_tag_len
+        output_size = feed.output_size
+        num_classes = feed.num_classes
+        corner_target_var = [
+            {
+                'name': 'tl_heatmaps',
+                'shape': [num_classes, output_size[0], output_size[1]],
+                'dtype': 'float32',
+                'lod_level': 0
+            },
+            {
+                'name': 'br_heatmaps',
+                'shape': [num_classes, output_size[0], output_size[1]],
+                'dtype': 'float32',
+                'lod_level': 0
+            },
+            {
+                'name': 'tl_regrs',
+                'shape': [max_tag_len, 2],
+                'dtype': 'float32',
+                'lod_level': 1
+            },
+            {
+                'name': 'br_regrs',
+                'shape': [max_tag_len, 2],
+                'dtype': 'float32',
+                'lod_level': 1
+            },
+            {
+                'name': 'tl_tags',
+                'shape': [max_tag_len],
+                'dtype': 'int64',
+                'lod_level': 1
+            },
+            {
+                'name': 'br_tags',
+                'shape': [max_tag_len],
+                'dtype': 'int64',
+                'lod_level': 1
+            },
+            {
+                'name': 'tag_masks',
+                'shape': [max_tag_len],
+                'dtype': 'uint8',
+                'lod_level': 0
+            },
+        ]
+        for target in corner_target_var:
+            feed_var_map[target['name']] = target
 
     base_name_list = ['image']
     num_scale = getattr(feed, 'num_scale', 1)

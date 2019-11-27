@@ -39,7 +39,7 @@ __all__ = [
     'MaskRCNNTrainFeed', 'FasterRCNNEvalFeed', 'MaskRCNNEvalFeed',
     'FasterRCNNTestFeed', 'MaskRCNNTestFeed', 'SSDTrainFeed', 'SSDEvalFeed',
     'SSDTestFeed', 'YoloTrainFeed', 'YoloEvalFeed', 'YoloTestFeed',
-    'create_reader'
+    'create_reader', 'CornerNetTrainFeed'
 ]
 
 
@@ -115,6 +115,7 @@ def create_reader(feed, max_iter=0, args_path=None, my_source=None):
     rand_shape = [t for t in batch_transforms if isinstance(t, RandomShape)]
     multi_scale = [t for t in batch_transforms if isinstance(t, MultiScale)]
     pad_ms_test = [t for t in batch_transforms if isinstance(t, PadMSTest)]
+    corner_target = [t for t in batch_transforms if isinstance(t, CornerTarget)]
 
     if any(pad):
         transform_config['IS_PADDING'] = True
@@ -128,6 +129,8 @@ def create_reader(feed, max_iter=0, args_path=None, my_source=None):
         transform_config['ENABLE_MULTISCALE_TEST'] = True
         transform_config['NUM_SCALE'] = feed.num_scale
         transform_config['COARSEST_STRIDE'] = pad_ms_test[0].pad_to_stride
+    if any(corner_target):
+        transform_config['ENABLE_CORNER_TARGET'] = True
 
     if hasattr(inspect, 'getfullargspec'):
         argspec = inspect.getfullargspec
@@ -1061,4 +1064,73 @@ class YoloTestFeed(DataFeed):
                         interp=trans.interp)
             if isinstance(trans, Resize):
                 sample_transforms[i].target_dim = self.image_shape[-1]
+
+@register
+class CornerNetTrainFeed(DataFeed):
+    __doc__ = DataFeed.__doc__
+    __share__ = ['batch_size']
+
+    def __init__(self,
+                 dataset=CocoDataSet().__dict__,
+                 fields=[
+                     'image', 'im_id', 'gt_box', 'gt_label',
+                     'tl_heatmaps', 'br_heatmaps', 'tl_regrs',
+                     'br_regrs', 'tl_tags', 'br_tags', 'tag_mask'
+                 ],
+                 image_shape=[3, 511, 511],
+                 sample_transforms=[
+                     DecodeImage(to_rgb=False),
+                     CornerCrop(),
+                     Resize(target_dim=511),
+                     RandomFlipImage(prob=0.5),
+                     NormalizeImage(mean=[0.,0.,0.],
+                                    std=[1.,1.,1.],
+                                    is_scale=True,
+                                    is_channel_first=False),
+                     ColorDistort(saturation=0.4,
+                                  contrast=0.4,
+                                  brightness=0.4,
+                                  corner_jitter=True),
+                     Lighting(eigval=[0.2141788, 0.01817699, 0.00341571],
+                              eigvec=[[-0.58752847, -0.69563484, 0.41340352],
+                                      [-0.5832747, 0.00994535, -0.81221408],
+                                      [-0.56089297, 0.71832671, 0.41158938]]),
+                     NormalizeImage(mean=[0.485, 0.456, 0.406],
+                                    std=[0.229, 0.224, 0.225],
+                                    is_scale=False,
+                                    is_channel_first=False),
+                     Permute(to_bgr=False),
+                     CornerTarget(output_size=64, num_classes=80)
+                 ],
+                 batch_transforms=[],
+                 batch_size=1,
+                 shuffle=True,
+                 samples=-1,
+                 drop_last=False,
+                 bufsize=10,
+                 num_workers=2,
+                 use_process=False,
+                 memsize=None,
+                 class_aware_sampling=False):
+        # XXX this should be handled by the data loader, since `fields` is
+        # given, just collect them
+        sample_transforms.append(ArrangeTrainCornerNet())
+        super(CornerNetTrainFeed, self).__init__(
+            dataset,
+            fields,
+            image_shape,
+            sample_transforms,
+            batch_transforms,
+            batch_size=batch_size,
+            shuffle=shuffle,
+            samples=samples,
+            drop_last=drop_last,
+            bufsize=bufsize,
+            num_workers=num_workers,
+            use_process=use_process,
+            memsize=memsize,
+            class_aware_sampling=class_aware_sampling)
+        # XXX these modes should be unified
+        self.mode = 'TRAIN'
+
 # yapf: enable

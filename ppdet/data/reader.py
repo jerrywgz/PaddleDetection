@@ -80,6 +80,7 @@ class Reader(object):
             'use_padded_im_info',
             'enable_multiscale_test',
             'num_scale',
+            'enable_corner_target',
         }
         bm_config = {
             key: value

@@ -29,7 +29,8 @@ def build_post_map(coarsest_stride=1,
                    multi_scales=[],
                    use_padded_im_info=False,
                    enable_multiscale_test=False,
-                   num_scale=1):
+                   num_scale=1,
+                   enable_corner_target=False):
     """
     Build a mapper for post-processing batches
 
@@ -132,6 +133,16 @@ def build_post_map(coarsest_stride=1,
             scaled_batch.append((im.transpose(2, 0, 1), im_info) + data[2:])
         return scaled_batch
 
+    def get_corner_target(batch_data):
+        tl_shape = batch_data[0][4].shape
+        off_size = tl_shape[1] * tl_shape[2]
+        for ind, data in enumerate(batch_data):
+            tl_tags = data[-3]
+            br_tags = data[-2]
+            tl_tags += ind * off_size
+            br_tags += ind * off_size
+        return batch_data
+
     def _mapper(batch_data):
         try:
             if is_padding:
@@ -142,6 +153,8 @@ def build_post_map(coarsest_stride=1,
                 batch_data = multi_scale_resize(batch_data)
             if enable_multiscale_test:
                 batch_data = padding_multiscale_test(batch_data)
+            if enable_corner_target:
+                batch_data = get_corner_target(batch_data)
         except Exception as e:
             errmsg = "post-process failed with error: " + str(e)
             logger.warn(errmsg)

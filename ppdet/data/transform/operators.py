@@ -40,7 +40,8 @@ from ppdet.core.workspace import serializable
 from .op_helper import (satisfy_sample_constraint, filter_and_process,
                         generate_sample_bbox, clip_bbox, data_anchor_sampling,
                         satisfy_sample_constraint_coverage, crop_image_sampling,
-                        generate_sample_bbox_square, bbox_area_sampling)
+                        generate_sample_bbox_square, bbox_area_sampling,
+                        gaussian_radius)
 
 logger = logging.getLogger(__name__)
 
@@ -1009,9 +1010,8 @@ class Resize(BaseOperator):
             'random' (for randomized interpolation).
             default to `cv2.INTER_LINEAR`.
     """
-    def __init__(self,
-                 target_dim=[],
-                 interp=cv2.INTER_LINEAR):
+
+    def __init__(self, target_dim=[], interp=cv2.INTER_LINEAR):
         super(Resize, self).__init__()
         self.target_dim = target_dim
         self.interp = interp  # 'random' for yolov3
@@ -1032,10 +1032,10 @@ class Resize(BaseOperator):
         scale_x = dim / w
         scale_y = dim / h
         if 'gt_bbox' in sample and len(sample['gt_bbox']) > 0:
-            scale_array = np.array([scale_x, scale_y] * 2,
-                                   dtype=np.float32)
-            sample['gt_bbox'] = np.clip(
-                sample['gt_bbox'] * scale_array, 0, dim - 1)
+            if self.scale_box or self.scale_box is None:
+                scale_array = np.array([scale_x, scale_y] * 2, dtype=np.float32)
+                sample['gt_bbox'] = np.clip(sample['gt_bbox'] * scale_array, 0,
+                                            dim - 1)
         sample['h'] = resize_h
         sample['w'] = resize_w
 
@@ -1060,12 +1060,14 @@ class ColorDistort(BaseOperator):
         random_apply (bool): whether to apply in random (yolo) or fixed (SSD)
             order.
     """
+
     def __init__(self,
                  hue=[-18, 18, 0.5],
                  saturation=[0.5, 1.5, 0.5],
                  contrast=[0.5, 1.5, 0.5],
                  brightness=[0.5, 1.5, 0.5],
-                 random_apply=True):
+                 random_apply=True,
+                 corner_jitter=False):
         super(ColorDistort, self).__init__()
         self.hue = hue
         self.saturation = saturation
@@ -1073,7 +1075,7 @@ class ColorDistort(BaseOperator):
         self.brightness = brightness
         self.random_apply = random_apply
 
-    def apply_hue(self, img):
+    def apply_hue(self, img, corner_jitter=False):
         low, high, prob = self.hue
         if np.random.uniform(0., 1.) < prob:
             return img
@@ -1084,20 +1086,22 @@ class ColorDistort(BaseOperator):
         delta = np.random.uniform(low, high)
         u = np.cos(delta * np.pi)
         w = np.sin(delta * np.pi)
-        bt = np.array([[1.0, 0.0, 0.0],
-                       [0.0, u, -w],
-                       [0.0, w, u]])
-        tyiq = np.array([[0.299, 0.587, 0.114],
-                         [0.596, -0.274, -0.321],
+        bt = np.array([[1.0, 0.0, 0.0], [0.0, u, -w], [0.0, w, u]])
+        tyiq = np.array([[0.299, 0.587, 0.114], [0.596, -0.274, -0.321],
                          [0.211, -0.523, 0.311]])
-        ityiq = np.array([[1.0, 0.956, 0.621],
-                          [1.0, -0.272, -0.647],
+        ityiq = np.array([[1.0, 0.956, 0.621], [1.0, -0.272, -0.647],
                           [1.0, -1.107, 1.705]])
         t = np.dot(np.dot(ityiq, bt), tyiq).T
         img = np.dot(img, t)
         return img
 
-    def apply_saturation(self, img):
+    def apply_saturation(self, img, corner_jitter=False):
+        if corner_jitter:
+            alpha = 1. + np.random.uniform(
+                low=-self.saturation, high=self.saturation)
+            self._blend(alpha, img,
+                        cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)[:, :, None])
+            return img
         low, high, prob = self.saturation
         if np.random.uniform(0., 1.) < prob:
             return img
@@ -1111,7 +1115,13 @@ class ColorDistort(BaseOperator):
         img += gray
         return img
 
-    def apply_contrast(self, img):
+    def apply_contrast(self, img, corner_jitter=False):
+        if corner_jitter:
+            alpha = 1. + np.random.uniform(
+                low=-self.contrast, high=self.contrast)
+            img_mean = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY).mean()
+            self._blend(alpha, img, img_mean)
+            return img
         low, high, prob = self.contrast
         if np.random.uniform(0., 1.) < prob:
             return img
@@ -1121,7 +1131,12 @@ class ColorDistort(BaseOperator):
         img *= delta
         return img
 
-    def apply_brightness(self, img):
+    def apply_brightness(self, img, corner_jitter=False):
+        if corner_jitter:
+            alpha = 1 + np.random.uniform(
+                low=-self.brightness, high=self.brightness)
+            img *= alpha
+            return img
         low, high, prob = self.brightness
         if np.random.uniform(0., 1.) < prob:
             return img
@@ -1131,17 +1146,23 @@ class ColorDistort(BaseOperator):
         img += delta
         return img
 
+    def _blend(alpha, img, img_mean):
+        img *= alpha
+        img_mean *= (1 - alpha)
+        img += img_mean
+
     def __call__(self, sample, context=None):
         img = sample['image']
         if self.random_apply:
-            distortions = np.random.permutation([
-                self.apply_brightness,
-                self.apply_contrast,
-                self.apply_saturation,
-                self.apply_hue
-            ])
+            functions = [
+                self.apply_brightness, self.apply_contrast,
+                self.apply_saturation
+            ]
+            if not corner_jitter:
+                functions.append(self.apply_hue)
+            distortions = np.random.permutation(functions)
             for func in distortions:
-                img = func(img)
+                img = func(img, corner_jitter)
             sample['image'] = img
             return sample
 
@@ -1167,6 +1188,7 @@ class NormalizePermute(BaseOperator):
         mean (list): mean values in RGB order.
         std (list): std values in RGB order.
     """
+
     def __init__(self,
                  mean=[123.675, 116.28, 103.53],
                  std=[58.395, 57.120, 57.375]):
@@ -1197,7 +1219,8 @@ class RandomExpand(BaseOperator):
         prob (float): probability to expand.
         fill_value (list): color value used to fill the canvas. in RGB order.
     """
-    def __init__(self, ratio=4., prob=0.5, fill_value=(127.5,) * 3):
+
+    def __init__(self, ratio=4., prob=0.5, fill_value=(127.5, ) * 3):
         super(RandomExpand, self).__init__()
         assert ratio > 1.01, "expand ratio must be larger than 1.01"
         self.ratio = ratio
@@ -1205,7 +1228,7 @@ class RandomExpand(BaseOperator):
         assert isinstance(fill_value, (Number, Sequence)), \
             "fill value must be either float or sequence"
         if isinstance(fill_value, Number):
-            fill_value = (fill_value,) * 3
+            fill_value = (fill_value, ) * 3
         if not isinstance(fill_value, tuple):
             fill_value = tuple(fill_value)
         self.fill_value = fill_value
@@ -1251,6 +1274,7 @@ class RandomCrop(BaseOperator):
         allow_no_crop (bool): allow return without actually cropping them.
         cover_all_box (bool): ensure all bboxes are covered in the final crop.
     """
+
     def __init__(self,
                  aspect_ratio=[.5, 2.],
                  thresholds=[.0, .1, .3, .5, .7, .9],
@@ -1295,15 +1319,16 @@ class RandomCrop(BaseOperator):
             for i in range(self.num_attempts):
                 scale = np.random.uniform(*self.scaling)
                 min_ar, max_ar = self.aspect_ratio
-                aspect_ratio = np.random.uniform(max(min_ar, scale**2),
-                                                 min(max_ar, scale**-2))
+                aspect_ratio = np.random.uniform(
+                    max(min_ar, scale**2), min(max_ar, scale**-2))
                 crop_h = int(h * scale / np.sqrt(aspect_ratio))
                 crop_w = int(w * scale * np.sqrt(aspect_ratio))
                 crop_y = np.random.randint(0, h - crop_h)
                 crop_x = np.random.randint(0, w - crop_w)
                 crop_box = [crop_x, crop_y, crop_x + crop_w, crop_y + crop_h]
-                iou = self._iou_matrix(gt_bbox,
-                                       np.array([crop_box], dtype=np.float32))
+                iou = self._iou_matrix(
+                    gt_bbox, np.array(
+                        [crop_box], dtype=np.float32))
                 if iou.max() < thresh:
                     continue
 
@@ -1311,7 +1336,8 @@ class RandomCrop(BaseOperator):
                     continue
 
                 cropped_box, valid_ids = self._crop_box_with_center_constraint(
-                    gt_bbox, np.array(crop_box, dtype=np.float32))
+                    gt_bbox, np.array(
+                        crop_box, dtype=np.float32))
                 if valid_ids.size > 0:
                     found = True
                     break
@@ -1349,8 +1375,8 @@ class RandomCrop(BaseOperator):
         cropped_box[:, 2:] -= crop[:2]
 
         centers = (box[:, :2] + box[:, 2:]) / 2
-        valid = np.logical_and(
-            crop[:2] <= centers, centers < crop[2:]).all(axis=1)
+        valid = np.logical_and(crop[:2] <= centers,
+                               centers < crop[2:]).all(axis=1)
         valid = np.logical_and(
             valid, (cropped_box[:, :2] < cropped_box[:, 2:]).all(axis=1))
 
@@ -1359,3 +1385,171 @@ class RandomCrop(BaseOperator):
     def _crop_image(self, img, crop):
         x1, y1, x2, y2 = crop
         return img[y1:y2, x1:x2, :]
+
+
+@register
+class Lighting(BaseOperator):
+    def __init__(self, eigval, eigvec, alphastd=0.1):
+        """
+        """
+        super(Lighting, self).__init__()
+        self.alphastd = alphastd
+        self.eigval = np.array(eigval).astype('float32')
+        self.eigvec = np.array(eigvec).astype('float32')
+
+    def __call__(self, sample, context=None):
+        """"""
+        alpha = np.random.normal(scale=self.alphastd, size=(3, ))
+        sample['image'] += np.dot(self.igvec, self.eigval * alpha)
+        return sample
+
+
+@register_op
+class CornerTarget(BaseOperator):
+    def __init__(self,
+                 output_size,
+                 num_classes,
+                 gaussian_bump=True,
+                 gaussian_rad=-1,
+                 gaussian_iou=0.3,
+                 max_tag_len=128):
+        """
+        """
+        super(CornerTarget, self).__init__()
+        self.num_classes = num_classes
+        self.output_size = output_size
+        self.max_tag_len = max_tag_len
+
+    def __call__(self, sample, context=None):
+        """ """
+        tl_heatmaps = np.zeros(
+            (num_classes, self.output_size[0], self.output_size[1]),
+            dtype=np.float32)
+        br_heatmaps = np.zeros(
+            (num_classes, self.output_size[0], self.output_size[1]),
+            dtype=np.float32)
+        #tl_regrs    = np.zeros((self.max_tag_len, 2), dtype=np.float32)
+        #br_regrs    = np.zeros((self.max_tag_len, 2), dtype=np.float32)
+
+        #tl_tags     = np.zeros((self.max_tag_len), dtype=np.int64)
+        #br_tags     = np.zeros((self.max_tag_len), dtype=np.int64)
+        #tag_mask = np.zeros(max_tag_len), dtype=np.uint8)
+
+        tl_regrs = []
+        br_regrs = []
+        tl_tags = []
+        br_tags = []
+        tag_nums = np.zeros((1), dtype=np.uint8)
+        tag_lens = 0
+        gt_bbox = sample['gt_bbox']
+        gt_class = sample['gt_class']
+        width_ratio = output_size[1] / sample['w']
+        height_ratio = output_size[0] / sample['h']
+        for i in range(gt_bbox.shape[0]):
+            width = gt_bbox[i][2] - gt_bbox[i][0]
+            height = gt_bbox[i][3] - gt_bbox[i][1]
+
+            xtl, ytl = gt_bbox[i][0], gt_bbox[i][1]
+            xbr, ybr = gt_bbox[i][2], gt_bbox[i][3]
+
+            fxtl = (xtl * width_ratio)
+            fytl = (ytl * height_ratio)
+            fxbr = (xbr * width_ratio)
+            fybr = (ybr * height_ratio)
+
+            xtl = int(fxtl)
+            ytl = int(fytl)
+            xbr = int(fxbr)
+            ybr = int(fybr)
+            if gaussian_bump:
+                width = math.ceil(width * width_ratio)
+                height = math.ceil(height * height_ratio)
+                if gaussian_rad == -1:
+                    radius = gaussian_radius((height, width), gaussian_iou)
+                    radius = max(0, int(radius))
+                else:
+                    radius = gaussian_rad
+                draw_gaussian(tl_heatmaps[b_ind, category], [xtl, ytl], radius)
+                draw_gaussian(br_heatmaps[b_ind, category], [xbr, ybr], radius)
+            else:
+                tl_heatmaps[gt_class[i][0], ytl, xtl] = 1
+                br_heatmaps[gt_class[i][0], ybr, xbr] = 1
+
+            #tl_regrs[tag_ind, :] = [fxtl - xtl, fytl - ytl]
+            #br_regrs[tag_ind, :] = [fxbr - xbr, fybr - ybr]
+            #tl_tags[tag_ind] = ytl * output_size[1] + xtl
+            #br_tags[tag_ind] = ybr * output_size[1] + xbr
+            tag_lens += 1
+            tl_regrs.extend([fxtl - xtl, fytl - ytl])
+            br_regrs.extend([fxbr - xbr, fybr - ybr])
+            tl_tags.append(ytl * self.output_size[1] + xtl)
+            br_tags.append(ybr * output_size[1] + xbr)
+        tag_nums[0] = tag_lens
+
+        #tag_mask[:tag_lens] = 1
+
+        sample['tl_heatmaps'] = tl_heatmaps
+        sample['br_heatmaps'] = br_heatmaps
+        sample['tl_regrs'] = np.array(tl_regrs).astype('float32')
+        sample['br_regrs'] = np.array(br_regrs).astype('float32')
+        sample['tl_tags'] = np.array(tl_tags).astype('int64')
+        sample['br_tags'] = np.array(br_tags).astype('int64')
+        sample['tag_nums'] = tag_nums
+
+        return sample
+
+
+@register
+class CornerCrop(BaseOperator):
+    def __init__(self,
+                 random_scales=[0.6, 0.7, 0.8, 0.9, 1., 1.1, 1.2, 1.3],
+                 input_size=511,
+                 border=128):
+        """
+        """
+        super(CornerCrop, self).__init__()
+        self.random_scales = random_scale
+        self.input_size = input_size
+        self.border = border
+
+    def __call__(self, sample, context=None):
+        """"""
+        scale = np.random.choice(self.random_scale)
+        height = int(sample['h'] * scale)
+        width = int(sample['w'] * scale)
+
+        cropped_image = np.zeros((height, width, 3), dtype=sample['image'])
+
+        w_border = self._get_border(self.border, sample['w'])
+        h_border = self._get_border(self.border, sample['h'])
+
+        ctx = np.random.randint(low=w_border, high=sample['w'] - w_border)
+        cty = np.random.randint(low=h_border, high=sample['h'] - h_border)
+
+        x0, x1 = max(ctx - width // 2, 0), min(ctx + width // 2, sample['w'])
+        y0, y1 = max(cty - height // 2, 0), min(cty + height // 2, sample['h'])
+
+        left_w, right_w = ctx - x0, x1 - ctx
+        top_h, bottom_h = cty - y0, y1 - cty
+
+        # crop image
+        cropped_ctx, cropped_cty = width // 2, height // 2
+        x_slice = slice(cropped_ctx - left_w, cropped_ctx + right_w)
+        y_slice = slice(cropped_cty - top_h, cropped_cty + bottom_h)
+        cropped_image[y_slice, x_slice, :] = sample['image'][y0:y1, x0:x1, :]
+
+        sample['image'] = cropped_image
+        # crop detections
+        gt_bbox = sample['gt_bbox']
+        gt_bbox[:, 0:4:2] -= x0
+        gt_bbox[:, 1:4:2] -= y0
+        gt_bbox[:, 0:4:2] += cropped_ctx - left_w
+        gt_bbox[:, 1:4:2] += cropped_cty - top_h
+
+        return sample
+
+    def _get_border(self, border, size):
+        i = 1
+        while size - border // i <= border // i:
+            i *= 2
+        return border // i

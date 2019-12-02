@@ -427,3 +427,11 @@ def draw_gaussian(heatmap, center, radius, k=1):
     masked_gaussian = gaussian[radius - top:radius + bottom, radius - left:
                                radius + right]
     np.maximum(masked_heatmap, masked_gaussian * k, out=masked_heatmap)
+
+def gaussian2D(shape, sigma=1):
+    m, n = [(ss - 1.) / 2. for ss in shape]
+    y, x = np.ogrid[-m:m+1,-n:n+1]
+
+    h = np.exp(-(x * x + y * y) / (2 * sigma * sigma))
+    h[h < np.finfo(h.dtype).eps * h.max()] = 0
+    return h

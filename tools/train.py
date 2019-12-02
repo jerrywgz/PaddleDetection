@@ -167,6 +167,7 @@ def main():
     build_strategy = fluid.BuildStrategy()
     build_strategy.fuse_all_optimizer_ops = False
     build_strategy.fuse_elewise_add_act_ops = True
+    #build_strategy.enable_sequential_execution = True
     # only enable sync_bn in multi GPU devices
     sync_bn = getattr(model.backbone, 'norm_type', None) == 'sync_bn'
     build_strategy.sync_batch_norm = sync_bn and devices_num > 1 \
@@ -177,6 +178,7 @@ def main():
     # Set it to be 1 to save memory usages, so that unused variables in
     # local execution scopes can be deleted after each iteration.
     exec_strategy.num_iteration_per_drop_scope = 1
+    exec_strategy.num_threads = 1
     if FLAGS.dist:
         dist_utils.prepare_for_multi_process(exe, build_strategy, startup_prog,
                                              train_prog)
@@ -197,6 +199,7 @@ def main():
                  if 'finetune_exclude_pretrained_params' in cfg else []
 
     start_iter = 0
+    """
     if FLAGS.resume_checkpoint:
         checkpoint.load_checkpoint(exe, train_prog, FLAGS.resume_checkpoint)
         start_iter = checkpoint.global_step()
@@ -205,6 +208,38 @@ def main():
     elif cfg.pretrain_weights:
         checkpoint.load_params(
             exe, train_prog, cfg.pretrain_weights, ignore_params=ignore_params)
+    """
+    import cPickle as cp
+    torch_param = cp.load(open('torch_param.pkl', 'rb'))
+    trans_torch_param = {}
+    for k, v in torch_param.items():
+        tn = k.replace(".", "_")[7:]
+        if 'pre' in tn:
+            if 'skip_1' in tn:
+                tn = tn[:14]+'bn'+tn[15:]
+            elif 'skip_0' in tn:
+                tn = tn[:14]+'conv'+tn[15:]
+        elif 'inters__' in tn:
+            if '0_0' in tn:
+                tn = tn[:13] + 'conv' + tn[14:]
+            elif '0_1' in tn:
+                tn = tn[:13] + 'bn' + tn[14:]
+        elif 'cnvs__' in tn:
+            if '0_0' in tn:
+                tn = tn[:11] + 'conv_weight'
+            elif '0_1' in tn:
+                tn = tn[:11] + 'bn' + tn[12:]
+        trans_torch_param[tn] = v
+     
+    param_name_list =train_prog.block(0).all_parameters()
+    for p in param_name_list:
+         name = p.name
+         t = fluid.global_scope().find_var(name).get_tensor()
+         if name not in trans_torch_param.keys():
+             print('not exist: ', name)
+         else:
+             t.set(trans_torch_param[name], place)
+         
 
     train_reader = create_reader(train_feed, (cfg.max_iters - start_iter) *
                                  devices_num, FLAGS.dataset_dir)

@@ -28,10 +28,10 @@ from ppdet.data.transform.operators import (
     DecodeImage, MixupImage, NormalizeBox, NormalizeImage, RandomDistort,
     RandomFlipImage, RandomInterpImage, ResizeImage, ExpandImage, CropImage,
     Permute, MultiscaleTestResize, Resize, ColorDistort, NormalizePermute,
-    RandomExpand, RandomCrop)
+    RandomExpand, RandomCrop, CornerCrop, Lighting, CornerTarget)
 from ppdet.data.transform.arrange_sample import (
     ArrangeRCNN, ArrangeEvalRCNN, ArrangeTestRCNN, ArrangeSSD, ArrangeEvalSSD,
-    ArrangeTestSSD, ArrangeYOLO, ArrangeEvalYOLO, ArrangeTestYOLO)
+    ArrangeTestSSD, ArrangeYOLO, ArrangeEvalYOLO, ArrangeTestYOLO, ArrangeTrainCornerNet)
 
 __all__ = [
     'PadBatch', 'MultiScale', 'RandomShape', 'PadMSTest', 'DataSet',
@@ -1068,39 +1068,40 @@ class YoloTestFeed(DataFeed):
 @register
 class CornerNetTrainFeed(DataFeed):
     __doc__ = DataFeed.__doc__
-    __share__ = ['batch_size']
 
     def __init__(self,
                  dataset=CocoDataSet().__dict__,
                  fields=[
                      'image', 'im_id', 'gt_box', 'gt_label',
                      'tl_heatmaps', 'br_heatmaps', 'tl_regrs',
-                     'br_regrs', 'tl_tags', 'br_tags', 'tag_mask'
+                     'br_regrs', 'tl_tags', 'br_tags', 'tag_nums'
                  ],
                  image_shape=[3, 511, 511],
                  sample_transforms=[
                      DecodeImage(to_rgb=False),
-                     CornerCrop(),
+                     #CornerCrop(),
                      Resize(target_dim=511),
-                     RandomFlipImage(prob=0.5),
-                     NormalizeImage(mean=[0.,0.,0.],
-                                    std=[1.,1.,1.],
-                                    is_scale=True,
-                                    is_channel_first=False),
-                     ColorDistort(saturation=0.4,
-                                  contrast=0.4,
-                                  brightness=0.4,
-                                  corner_jitter=True),
-                     Lighting(eigval=[0.2141788, 0.01817699, 0.00341571],
-                              eigvec=[[-0.58752847, -0.69563484, 0.41340352],
-                                      [-0.5832747, 0.00994535, -0.81221408],
-                                      [-0.56089297, 0.71832671, 0.41158938]]),
-                     NormalizeImage(mean=[0.485, 0.456, 0.406],
-                                    std=[0.229, 0.224, 0.225],
-                                    is_scale=False,
-                                    is_channel_first=False),
+                     #RandomFlipImage(prob=0.5),
+                     #NormalizeImage(mean=[0.,0.,0.],
+                     #               std=[1.,1.,1.],
+                     #               is_scale=True,
+                     #               is_channel_first=False),
+                     #ColorDistort(saturation=0.4,
+                     #             contrast=0.4,
+                     #             brightness=0.4,
+                     #             corner_jitter=True),
+                     #Lighting(eigval=[0.2141788, 0.01817699, 0.00341571],
+                     #         eigvec=[[-0.58752847, -0.69563484, 0.41340352],
+                     #                 [-0.5832747, 0.00994535, -0.81221408],
+                     #                 [-0.56089297, 0.71832671, 0.41158938]]),
+                     #NormalizeImage(mean=[0.485, 0.456, 0.406],
+                     #               std=[0.229, 0.224, 0.225],
+                     #               is_scale=False,
+                     #               is_channel_first=False),
                      Permute(to_bgr=False),
-                     CornerTarget(output_size=64, num_classes=80)
+                     CornerTarget(output_size=[64, 64],
+                                  num_classes=80, 
+                                  max_tag_len=128)
                  ],
                  batch_transforms=[],
                  batch_size=1,
@@ -1110,8 +1111,7 @@ class CornerNetTrainFeed(DataFeed):
                  bufsize=10,
                  num_workers=2,
                  use_process=False,
-                 memsize=None,
-                 class_aware_sampling=False):
+                 memsize=None):
         # XXX this should be handled by the data loader, since `fields` is
         # given, just collect them
         sample_transforms.append(ArrangeTrainCornerNet())
@@ -1128,8 +1128,7 @@ class CornerNetTrainFeed(DataFeed):
             bufsize=bufsize,
             num_workers=num_workers,
             use_process=use_process,
-            memsize=memsize,
-            class_aware_sampling=class_aware_sampling)
+            memsize=memsize)
         # XXX these modes should be unified
         self.mode = 'TRAIN'
 

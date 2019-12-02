@@ -39,15 +39,17 @@ class CornerNetSqueeze(object):
 
     def build(self, feed_vars, mode='train'):
         im = feed_vars['image']
+        fluid.layers.Print(im)
         body_feats = self.backbone(im)
+        fluid.layers.Print(body_feats[0])
 
         if mode == 'train':
             target_vars = [
-                'tl_heatmaps', 'br_heatmaps', 'tag_num', 'tl_regrs', 'br_regrs',
+                'tl_heatmaps', 'br_heatmaps', 'tag_nums', 'tl_regrs', 'br_regrs',
                 'tl_tags', 'br_tags'
             ]
             target = {key: feed_vars[key] for key in target_vars}
-            self.corner_head.get_output(body_feats, name='corner_head')
+            self.corner_head.get_output(body_feats)
             loss = self.corner_head.get_loss(target)
             return {'loss': loss}
 

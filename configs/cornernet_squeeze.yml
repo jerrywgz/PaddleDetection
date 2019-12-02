@@ -1,23 +1,25 @@
 architecture: CornerNetSqueeze
 train_feed: CornerNetTrainFeed
 use_gpu: true
-max_iters: 500000
-log_smooth_window: 20
+max_iters: 1 
+log_smooth_window: 1
+log_iter: 1
 save_dir: output
 snapshot_iter: 2000
 metric: COCO
+pretrain_weights: NULL
 weights: output/cornernet_squeeze/model_final
 num_classes: 80
 stack: 2
 
 CornerNetSqueeze:
-    backbone: Hourglass
-    corner_head: CornerHead
+  backbone: Hourglass
+  corner_head: CornerHead
 
 Hourglass: {}
 
 CornerHead:
-    batch_size: 2
+  batch_size: 2
     
 LearningRate:
   base_lr: 0.00025
@@ -26,23 +28,23 @@ LearningRate:
     gamma: 0.1
     milestones:
     - 450000
-  - !LinearWarmup
-    start_factor: 0.
-    steps: 4000
+#  - !LinearWarmup
+#    start_factor: 0.
+#    steps: 4000
 
 OptimizerBuilder:
   optimizer:
-    momentum: 0.9
-    type: Momentum
-  regularizer:
-    factor: 0.0005
+    #momentum: 0.9
+    type: Adam
+  regularizer: 
+    factor: 0.0
     type: L2
 
 CornerNetTrainFeed:
   batch_size: 2
   dataset:
     dataset_dir: dataset/coco
-    annotation: annotations/instances_val2017_debug_139.json
+    annotation: annotations/instances_val2017_debug.json
     image_dir: val2017
   num_workers: 8
   bufsize: 128

@@ -414,8 +414,8 @@ class ArrangeTrainCornerNet(BaseOperator):
         br_regrs = sample['br_regrs']
         tl_tags = sample['tl_tags']
         br_tags = sample['br_tags']
-        tag_mask = sample['tag_mask']
+        tag_nums = sample['tag_nums']
 
         outs = (im, im_id, gt_bbox, gt_class, tl_heatmaps, br_heatmaps,
-                tl_regrs, br_regrs, tl_tags, br_tags, tag_mask)
+                tl_regrs, br_regrs, tl_tags, br_tags, tag_nums)
         return outs

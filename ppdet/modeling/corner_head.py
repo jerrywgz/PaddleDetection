@@ -20,8 +20,10 @@ from paddle import fluid
 from paddle.fluid.param_attr import ParamAttr
 from paddle.fluid.initializer import Constant
 
-from backbone.hourglass import _conv_norm
+from .backbones.hourglass import _conv_norm
+from ppdet.core.workspace import register
 import cornerpool_lib
+import numpy as np
 
 __all__ = ['CornerHead']
 
@@ -29,14 +31,42 @@ __all__ = ['CornerHead']
 def corner_pool(x, dim, pool1, pool2, name=None):
     p1_conv1 = _conv_norm(x, 3, 128, pad=1, act='relu', name=name + '_p1_conv1')
     pool1 = pool1(p1_conv1)
-
-    p2_conv1 = _conv_norm(x, 3, 128, pad=1, act='relu', name=name + '_p1_conv2')
+    p2_conv1 = _conv_norm(x, 3, 128, pad=1, act='relu', name=name + '_p2_conv1')
     pool2 = pool2(p2_conv1)
 
-    p1 = _conv_norm(pool1 + pool2, 3, dim, pad=1, name=name + '_p1')
-    p2 = _conv_norm(x, 1, dim, pad=1, act='relu', name=name + '_p2')
+    p_conv1 = fluid.layers.conv2d(
+        pool1 + pool2, 
+        filter_size=3, 
+        num_filters=dim, 
+        padding=1, 
+        param_attr=ParamAttr(name=name + "_p_conv1_weight"), 
+        bias_attr=False,
+        name=name + '_p_conv1')
+    p_bn1 = fluid.layers.batch_norm(
+        p_conv1,
+        param_attr=ParamAttr(name=name + '_p_bn1_weight'),
+        bias_attr=ParamAttr(name=name + '_p_bn1_bias'),
+        moving_mean_name=name + '_p_bn1_running_mean',
+        moving_variance_name=name + '_p_bn1_running_var',
+        name=name + '_p_bn1')
+    conv1 = fluid.layers.conv2d(
+        x, 
+        filter_size=1, 
+        num_filters=dim, 
+        param_attr=ParamAttr(name=name + "_conv1_weight"), 
+        bias_attr=False,
+        name=name + '_conv1')
+    bn1 = fluid.layers.batch_norm(
+        conv1,
+        param_attr=ParamAttr(name=name + '_bn1_weight'),
+        bias_attr=ParamAttr(name=name + '_bn1_bias'),
+        moving_mean_name=name + '_bn1_running_mean',
+        moving_variance_name=name + '_bn1_running_var',
+        name=name + '_bn1')
 
-    conv2 = _conv_norm(p2, 3, dim, name=name + '_conv2')
+    relu1 = fluid.layers.relu(p_bn1 + bn1)
+    conv2 = _conv_norm(relu1, 3, dim, pad=1, name=name + '_conv2')
+    return conv2
 
 
 @register
@@ -47,6 +77,7 @@ class CornerHead(object):
 
     def __init__(self, batch_size, num_classes=80, stack=2):
         self.batch_size = batch_size
+        self.num_classes = num_classes
         self.stack = stack
         self.tl_heats = []
         self.br_heats = []
@@ -61,13 +92,13 @@ class CornerHead(object):
             input=conv0,
             filter_size=1,
             num_filters=dim,
-            param_attr=ParamAttr(name=name + "_1_weights"),
+            param_attr=ParamAttr(name=name + "_1_weight"),
             bias_attr=ParamAttr(
                 name=name + "_1_bias", initializer=Constant(-2.19)),
-            name=_name + '_1')
+            name=name + '_1')
         return conv1
 
-    def get_output(self, input, name=None):
+    def get_output(self, input):
         tl_heats = []
         br_heats = []
         tl_tags = []
@@ -90,19 +121,19 @@ class CornerHead(object):
                 name='br_modules_' + str(ind))
 
             tl_heat = self.pred_mod(
-                tl_modules, num_classes, name=name + '_tl_heat_' + str(ind))
+                tl_modules, self.num_classes, name='tl_heats_' + str(ind))
             br_heat = self.pred_mod(
-                br_modules, num_classes, name=name + '_br_heat_' + str(ind))
+                br_modules, self.num_classes, name='br_heats_' + str(ind))
 
             tl_tag = self.pred_mod(
-                tl_modules, 1, name=name + '_tl_tag_' + str(ind))
+                tl_modules, 1, name='tl_tags_' + str(ind))
             br_tag = self.pred_mod(
-                br_modules, 1, name=name + '_tl_heat_' + str(ind))
+                br_modules, 1, name='br_tags_' + str(ind))
 
             tl_off = self.pred_mod(
-                tl_modules, 2, name=name + '_tl_off_' + str(ind))
+                tl_modules, 2, name='tl_offs_' + str(ind))
             br_off = self.pred_mod(
-                br_modules, 2, name=name + '_br_off_' + str(ind))
+                br_modules, 2, name='br_offs_' + str(ind))
 
             self.tl_heats.append(tl_heat)
             self.br_heats.append(br_heat)
@@ -139,33 +170,37 @@ class CornerHead(object):
         return loss
 
     def mask_feat(self, feat, ind):
-        feat_t = fluid.layers.tranpose(feat, [0, 2, 3, 1])
+        feat_t = fluid.layers.transpose(feat, [0, 2, 3, 1])
         H, W, C = feat_t.shape[1], feat_t.shape[2], feat_t.shape[3]
         feat_r = fluid.layers.reshape(feat_t, [-1, C])
-        feat_g = fluid.layers.gather(feat_r, inds)
+        feat_g = fluid.layers.gather(feat_r, ind)
         return fluid.layers.lod_reset(feat_g, ind)
 
-    def as_loss(self, tl_tag, br_tag, gt_num):
+    def ae_loss(self, tl_tag, br_tag, gt_num, expand_num):
         tag_mean = (tl_tag + br_tag) / 2
-        num = fluid.layers.sequence_expand(gt_num, gt_tl_ind)
-        tag0 = fluid.layers.pow(tag0 - tag_mean, 2) / (num + 1e-4)
-        tag1 = fluid.layers.pow(tag1 - tag_mean, 2) / (num + 1e-4)
+        tag0 = fluid.layers.pow(tl_tag - tag_mean, 2) / (expand_num + 1e-4)
+        tag1 = fluid.layers.pow(br_tag - tag_mean, 2) / (expand_num + 1e-4)
 
         tag0 = fluid.layers.reduce_sum(tag0)
         tag1 = fluid.layers.reduce_sum(tag1)
         pull = tag0 + tag1
 
         push = 0
+        total_num = 0
         for ind in range(self.batch_size):
             num_ind = fluid.layers.slice(
                 gt_num, axes=[0], starts=[ind], ends=[ind + 1])
+            num_ind = fluid.layers.reduce_sum(num_ind)
+            pre_num = total_num
+            total_num += num_ind
             num_ind2 = (num_ind - 1) * num_ind
+            num_ind2 = fluid.layers.cast(num_ind2, 'float32')
 
-            offset = fluid.layers.assign(input=np.array(
-                [[ind]]).astype('int32'))
-            tag_mean_ind = fluid.layers.sequence_slice(tag_mean, offset,
-                                                       num_ind)
-            tag_mean_T = fluid.layers.tranpose(tag_mean_ind, [1, 0])
+            tag_mean_ind = fluid.layers.slice(tag_mean, axes=[0], starts=[pre_num], ends=[total_num])
+            num_ind = fluid.layers.cast(num_ind, 'float32')
+            tag_mean_T = fluid.layers.transpose(tag_mean_ind, [1, 0])
+            shape = fluid.layers.shape(tag_mean_ind)
+            tag_mean_T = fluid.layers.expand(tag_mean_T, shape)
             dist = 1 - fluid.layers.abs(tag_mean_T - tag_mean_ind)
             dist = fluid.layers.relu(dist) - 1 / (num_ind + 1e-4)
             dist = dist / (num_ind2 + 1e-4)
@@ -175,20 +210,18 @@ class CornerHead(object):
     def off_loss(self, off, gt_off, gt_num):
         num = fluid.layers.reduce_sum(gt_num)
         off_loss = fluid.layers.smooth_l1(off, gt_off)
+        num = fluid.layers.cast(num, 'float32')
         off_loss = fluid.layers.reduce_sum(off_loss) / (num + 1e-4)
         return off_loss
 
     def get_loss(self, targets):
         gt_tl_heat = targets['tl_heatmaps']
         gt_br_heat = targets['br_heatmaps']
-        gt_num = targets['tag_num']
+        gt_num = targets['tag_nums']
         gt_tl_off = targets['tl_regrs']
         gt_br_off = targets['br_regrs']
         gt_tl_ind = targets['tl_tags']
         gt_br_ind = targets['br_tags']
-
-        #gt_num = fluid.layers.reduce_sum(gt_num, dim=1, keep_dim=True)
-        #gt_num = fluid.layers.sequence_expand(gt_num, gt_tl_ind)
 
         focal_loss = 0
         focal_loss += self.focal_loss(self.tl_heats, gt_tl_heat)
@@ -202,8 +235,10 @@ class CornerHead(object):
         br_tags = [self.mask_feat(br_tag, gt_br_ind) for br_tag in self.br_tags]
 
         pull_loss, push_loss = 0, 0
+        expand_num = fluid.layers.sequence_expand(gt_num, gt_tl_ind)
+        expand_num = fluid.layers.cast(expand_num, 'float32')
         for tl_tag, br_tag in zip(tl_tags, br_tags):
-            pull, push = self.ae_loss(tl_tag, br_tag, gt_num)
+            pull, push = self.ae_loss(tl_tag, br_tag, gt_num, expand_num)
             pull_loss += pull
             push_loss += push
 
@@ -212,8 +247,8 @@ class CornerHead(object):
 
         off_loss = 0
         for tl_off, br_off in zip(tl_offs, br_offs):
-            off_loss += self.off_loss(tl_off, gt_tl_off)
-            off_loss += self.off_loss(br_off, gt_br_off)
+            off_loss += self.off_loss(tl_off, gt_tl_off, gt_num)
+            off_loss += self.off_loss(br_off, gt_br_off, gt_num)
 
-        loss = (focal_loss + pull_loss + push_loss + off_loss) / len(tl_heats)
+        loss = (focal_loss + pull_loss + push_loss + off_loss) / len(self.tl_heats)
         return loss

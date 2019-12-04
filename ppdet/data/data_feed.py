@@ -68,7 +68,8 @@ def _prepare_data_config(feed, args_path):
         'SAMPLES': feed.samples,
         'WITH_BACKGROUND': feed.with_background,
         'MIXUP_EPOCH': mixup_epoch,
-        'TYPE': type(feed.dataset).__source__
+        'TYPE': type(feed.dataset).__source__,
+        'CLIP_BBOX': feed.clip_bbox
     }
 
     if feed.mode == 'TRAIN':
@@ -115,7 +116,9 @@ def create_reader(feed, max_iter=0, args_path=None, my_source=None):
     rand_shape = [t for t in batch_transforms if isinstance(t, RandomShape)]
     multi_scale = [t for t in batch_transforms if isinstance(t, MultiScale)]
     pad_ms_test = [t for t in batch_transforms if isinstance(t, PadMSTest)]
-    corner_target = [t for t in batch_transforms if isinstance(t, CornerTarget)]
+
+    sample_transforms = feed.sample_transforms
+    corner_target = [t for t in sample_transforms if isinstance(t, CornerTarget)]
 
     if any(pad):
         transform_config['IS_PADDING'] = True
@@ -328,7 +331,8 @@ class DataFeed(object):
                  use_process=False,
                  memsize=None,
                  use_padded_im_info=False,
-                 class_aware_sampling=False):
+                 class_aware_sampling=False,
+                 clip_bbox=True):
         super(DataFeed, self).__init__()
         self.fields = fields
         self.image_shape = image_shape
@@ -346,6 +350,7 @@ class DataFeed(object):
         self.dataset = dataset
         self.use_padded_im_info = use_padded_im_info
         self.class_aware_sampling = class_aware_sampling
+        self.clip_bbox = clip_bbox
         if isinstance(dataset, dict):
             self.dataset = DataSet(**dataset)
 
@@ -1079,38 +1084,40 @@ class CornerNetTrainFeed(DataFeed):
                  image_shape=[3, 511, 511],
                  sample_transforms=[
                      DecodeImage(to_rgb=False),
-                     #CornerCrop(),
+                     CornerCrop(),
                      Resize(target_dim=511),
-                     #RandomFlipImage(prob=0.5),
-                     #NormalizeImage(mean=[0.,0.,0.],
-                     #               std=[1.,1.,1.],
-                     #               is_scale=True,
-                     #               is_channel_first=False),
-                     #ColorDistort(saturation=0.4,
-                     #             contrast=0.4,
-                     #             brightness=0.4,
-                     #             corner_jitter=True),
-                     #Lighting(eigval=[0.2141788, 0.01817699, 0.00341571],
-                     #         eigvec=[[-0.58752847, -0.69563484, 0.41340352],
-                     #                 [-0.5832747, 0.00994535, -0.81221408],
-                     #                 [-0.56089297, 0.71832671, 0.41158938]]),
-                     #NormalizeImage(mean=[0.485, 0.456, 0.406],
-                     #               std=[0.229, 0.224, 0.225],
-                     #               is_scale=False,
-                     #               is_channel_first=False),
+                     RandomFlipImage(prob=0.5),
+                     NormalizeImage(mean=[0.,0.,0.],
+                                    std=[1.,1.,1.],
+                                    is_scale=True,
+                                    is_channel_first=False),
+                     ColorDistort(saturation=0.4,
+                                  contrast=0.4,
+                                  brightness=0.4,
+                                  corner_jitter=True),
+                     Lighting(eigval=[0.2141788, 0.01817699, 0.00341571],
+                              eigvec=[[-0.58752847, -0.69563484, 0.41340352],
+                                      [-0.5832747, 0.00994535, -0.81221408],
+                                      [-0.56089297, 0.71832671, 0.41158938]]),
+                     NormalizeImage(mean=[0.485, 0.456, 0.406],
+                                    std=[0.229, 0.224, 0.225],
+                                    is_scale=False,
+                                    is_channel_first=False),
                      Permute(to_bgr=False),
                      CornerTarget(output_size=[64, 64],
                                   num_classes=80, 
                                   max_tag_len=128)
                  ],
                  batch_transforms=[],
-                 batch_size=1,
+                 batch_size=56,
                  shuffle=True,
                  samples=-1,
                  drop_last=False,
                  bufsize=10,
                  num_workers=2,
                  use_process=False,
+                 with_background=False,
+                 clip_bbox=False,
                  memsize=None):
         # XXX this should be handled by the data loader, since `fields` is
         # given, just collect them
@@ -1126,9 +1133,11 @@ class CornerNetTrainFeed(DataFeed):
             samples=samples,
             drop_last=drop_last,
             bufsize=bufsize,
+            with_background=with_background,
             num_workers=num_workers,
             use_process=use_process,
-            memsize=memsize)
+            memsize=memsize,
+            clip_bbox=False)
         # XXX these modes should be unified
         self.mode = 'TRAIN'
 

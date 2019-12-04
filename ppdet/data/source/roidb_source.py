@@ -42,7 +42,8 @@ class RoiDbSource(Dataset):
                  cname2cid=None,
                  use_default_label=None,
                  mixup_epoch=-1,
-                 with_background=True):
+                 with_background=True,
+                 clip_bbox=True):
         """ Init
 
         Args:
@@ -77,6 +78,7 @@ class RoiDbSource(Dataset):
         self._with_background = with_background
         self.cname2cid = cname2cid
         self._imid2path = None
+        self.clip_bbox = clip_bbox
 
     def __str__(self):
         return 'RoiDbSource(fname:%s,epoch:%d,size:%d,pos:%d)' \
@@ -115,7 +117,8 @@ class RoiDbSource(Dataset):
         from . import loader
         records, cname2cid = loader.load(self._fname, self._samples,
                                          self._with_background, True,
-                                         self.use_default_label, self.cname2cid)
+                                         self.use_default_label, self.cname2cid,
+                                         self.clip_bbox)
         self.cname2cid = cname2cid
         return records
 

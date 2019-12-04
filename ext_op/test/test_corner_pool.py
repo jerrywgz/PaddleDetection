@@ -77,7 +77,7 @@ class TestRightPoolOp(unittest.TestCase):
     def test_check_output(self):
         self.funcmap()
         self.setup()
-        x_shape = (1, 2, 3, 3)
+        x_shape = (2, 3, 5, 5)
         x_type = "float64"
 
         x = fluid.layers.data(

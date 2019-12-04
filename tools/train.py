@@ -136,6 +136,7 @@ def main():
                 if FLAGS.fp16:
                     loss /= ctx.get_loss_scale_var()
 
+    #train_prog = train_prog.clone(for_test=True)
     # parse train fetches
     train_keys, train_values, _ = parse_fetches(train_fetches)
     train_values.append(lr)
@@ -167,7 +168,6 @@ def main():
     build_strategy = fluid.BuildStrategy()
     build_strategy.fuse_all_optimizer_ops = False
     build_strategy.fuse_elewise_add_act_ops = True
-    #build_strategy.enable_sequential_execution = True
     # only enable sync_bn in multi GPU devices
     sync_bn = getattr(model.backbone, 'norm_type', None) == 'sync_bn'
     build_strategy.sync_batch_norm = sync_bn and devices_num > 1 \
@@ -178,13 +178,37 @@ def main():
     # Set it to be 1 to save memory usages, so that unused variables in
     # local execution scopes can be deleted after each iteration.
     exec_strategy.num_iteration_per_drop_scope = 1
-    exec_strategy.num_threads = 1
+    #exec_strategy.num_threads = 1
     if FLAGS.dist:
         dist_utils.prepare_for_multi_process(exe, build_strategy, startup_prog,
                                              train_prog)
         exec_strategy.num_threads = 1
 
     exe.run(startup_prog)
+    """
+    name_list = ['image', 'hg_pre_0_bn_output.tmp_3', 'hg_pre_2_add.tmp_0', 'hg_cnvs_0_bn_output.tmp_3',
+                     'tl_modules_0_conv2_bn_output.tmp_3', 'br_modules_0_conv2_bn_output.tmp_3',
+                     'tl_heats_0_1.tmp_1', 'br_heats_0_1.tmp_1',
+                     'tl_tags_0_1.tmp_1', 'br_tags_0_1.tmp_1', 'tl_offs_0_1.tmp_1', 'br_offs_0_1.tmp_1',
+                     'tl_heatmaps', 'br_heatmaps', 'tmp_30', 'tag_nums', 'cast_4.tmp_0', 'tmp_63', 'tmp_98', 'tl_regrs',
+                     'tmp_126',  'reduce_sum_0.tmp_0', 'reduce_sum_3.tmp_0',
+                     'reduce_sum_6.tmp_0', 'reduce_sum_9.tmp_0', 'br_heats_0_1.tmp_1', 'br_heats_1_1.tmp_1',
+                     'reduce_sum_1.tmp_0', 'reduce_sum_4.tmp_0', 'reduce_sum_7.tmp_0', 'reduce_sum_10.tmp_0',
+                     'lod_reset_0.tmp_0', 'lod_reset_1.tmp_0', 'tl_tags', 'tmp_54', 'tmp_123', 'tmp_124', 'tmp_136',
+                     'tmp_126@GRAD', 'tl_modules_0_conv2_bn_output.tmp_3@GRAD', 'br_modules_0_conv2_bn_output.tmp_3@GRAD',
+                     'tl_heats_0_1.tmp_1@GRAD', 'br_heats_0_1.tmp_1@GRAD', 'tl_tags_0_1.tmp_1@GRAD', 
+                     'br_tags_0_1.tmp_1@GRAD', 'tl_offs_0_1.tmp_1@GRAD', 'br_offs_0_1.tmp_1@GRAD', 
+                     'reduce_sum_3.tmp_0@GRAD', 'reduce_sum_4.tmp_0@GRAD', 'elementwise_min_0@GRAD', 'elementwise_min_0',
+                     'hg_pre_1_add.tmp_0', 'hg_pre_1_conv1_weight']
+
+    for name in name_list:
+        fluid.framework._get_var(name, train_prog).persistable = True 
+
+    for var in train_prog.list_vars():
+        name = var.name
+        if name == 'tmp_126@GRAD':
+            var.persistable = True
+    """
     compiled_train_prog = fluid.CompiledProgram(train_prog).with_data_parallel(
         loss_name=loss.name,
         build_strategy=build_strategy,
@@ -199,7 +223,7 @@ def main():
                  if 'finetune_exclude_pretrained_params' in cfg else []
 
     start_iter = 0
-    """
+    
     if FLAGS.resume_checkpoint:
         checkpoint.load_checkpoint(exe, train_prog, FLAGS.resume_checkpoint)
         start_iter = checkpoint.global_step()
@@ -230,7 +254,9 @@ def main():
             elif '0_1' in tn:
                 tn = tn[:11] + 'bn' + tn[12:]
         trans_torch_param[tn] = v
-     
+    param_list = ['hg_pre_0_conv_weight']
+    for p in param_list:
+        print('init param: {}, value: {}'.format(p, trans_torch_param[p])) 
     param_name_list =train_prog.block(0).all_parameters()
     for p in param_name_list:
          name = p.name
@@ -239,7 +265,7 @@ def main():
              print('not exist: ', name)
          else:
              t.set(trans_torch_param[name], place)
-         
+    """     
 
     train_reader = create_reader(train_feed, (cfg.max_iters - start_iter) *
                                  devices_num, FLAGS.dataset_dir)
@@ -278,8 +304,21 @@ def main():
         time_cost = np.mean(time_stat)
         eta_sec = (cfg.max_iters - it) * time_cost
         eta = str(datetime.timedelta(seconds=int(eta_sec)))
+
         outs = exe.run(compiled_train_prog, fetch_list=train_values)
+       
+        #for p in param_list: 
+        #    p_update = np.array(fluid.global_scope().find_var(p).get_tensor())
+        #    print('update param: {}, value: {}'.format(p, p_update))
+        
         stats = {k: np.array(v).mean() for k, v in zip(train_keys, outs[:-1])}
+        #for n in name_list:
+        #    print('name: ', n)
+        #    t = fluid.global_scope().find_var(n).get_tensor()
+        #    np_t = np.array(t)
+        #    print(n, np_t)
+        #    if n == 'tl_heatmaps' or 'br_heatmaps':
+        #        print(np.where(np_t == 1))
 
         # use tb-paddle to log loss
         if FLAGS.use_tb:

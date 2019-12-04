@@ -47,18 +47,19 @@ def _conv_norm(x,
         param_attr=ParamAttr(name=name + conv_name + "_weight"),
         bias_attr=ParamAttr(name=name + conv_name + "_bias") if not with_bn else False,
         name=name + '_output')
-    pattr = ParamAttr(name=name + bn_name + '_weight')
-    battr = ParamAttr(name=name + bn_name + '_bias')
-    out = fluid.layers.batch_norm(
-        input=conv,
-        act=act,
-        name=name + '_bn_output',
-        param_attr=pattr,
-        bias_attr=battr,
-        moving_mean_name=name + bn_name + '_running_mean',
-        moving_variance_name=name + bn_name +'_running_var') if with_bn else conv
-    if not with_bn:
-        out = fluid.layers.relu(out)
+    if with_bn:
+        pattr = ParamAttr(name=name + bn_name + '_weight')
+        battr = ParamAttr(name=name + bn_name + '_bias')
+        out = fluid.layers.batch_norm(
+            input=conv,
+            act=act,
+            name=name + '_bn_output',
+            param_attr=pattr,
+            bias_attr=battr,
+            moving_mean_name=name + bn_name + '_running_mean',
+            moving_variance_name=name + bn_name +'_running_var') if with_bn else conv
+    else:
+        out = fluid.layers.relu(conv)
     return out
 
 
@@ -158,7 +159,7 @@ class Hourglass(object):
 
     def __call__(self, input, name='hg'):
         inter = self.pre(input, name + '_pre')
-
+        print('inter: ', inter)
         cnvs = []
         for ind in range(self.stack):
             hg = self.hg_module(inter, name=name + '_hgs_' + str(ind))
@@ -176,8 +177,10 @@ class Hourglass(object):
         return cnvs
 
     def pre(self, x, name=None):
-        conv = _conv_norm(x, 7, 128, stride=2, name=name + '_0')
+        conv = _conv_norm(x, 7, 128, stride=2, pad=3, act='relu', name=name + '_0')
+        print('conv: ', conv)
         res1 = residual_block(conv, 256, stride=2, name=name + '_1')
+        print('res1: ', res1)
         res2 = residual_block(res1, 256, stride=2, name=name + '_2')
         return res2
 

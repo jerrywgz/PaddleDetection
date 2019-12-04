@@ -49,6 +49,7 @@ public:
     
     memory::Copy(gpu_place, output_data, gpu_place, x_data,
                 sizeof(T) * x->numel(), dev_ctx.stream());
+    dev_ctx.Wait();
 
     int threads = kNumCUDAThreads;
     std::vector<int> x_dims_v = framework::vectorize<int>(x_dims);
@@ -56,21 +57,23 @@ public:
     int *x_dims_gpu_data = reinterpret_cast<int*>(x_dims_gpu_ptr->ptr());
     memory::Copy(gpu_place, x_dims_gpu_data, platform::CPUPlace(), x_dims_v.data(), 
                  sizeof(int) * x_dims_v.size(), dev_ctx.stream());
+    dev_ctx.Wait();
     for (int ind = 1; ind < width; ind <<= 1) {
       temp_dims[3] = width - ind;
       int cur_num = framework::product(temp_dims);
-      int bytes = cur_num * sizeof(T);
-      auto cur_ptr = memory::Alloc(gpu_place, bytes);
-      auto next_ptr = memory::Alloc(gpu_place, bytes);
-      T* cur_data = reinterpret_cast<T*>(cur_ptr->ptr());
-      T* next_data = reinterpret_cast<T*>(next_ptr->ptr());
+      //int bytes = cur_num * sizeof(T);
+      //auto cur_ptr = memory::Alloc(gpu_place, bytes);
+      //auto next_ptr = memory::Alloc(gpu_place, bytes);
+      //T* cur_data = reinterpret_cast<T*>(cur_ptr->ptr());
+      //T* next_data = reinterpret_cast<T*>(next_ptr->ptr());
       int blocks = NumBlocks(cur_num);
 
-      SliceOnAxis<T><<<blocks, threads, 0, dev_ctx.stream()>>>(output_data, x_dims_gpu_data, 3, ind, width, cur_data);
-      SliceOnAxis<T><<<blocks, threads, 0, dev_ctx.stream()>>>(output_data, x_dims_gpu_data, 3, 0, temp_dims[3], next_data);
-      dev_ctx.Wait();
+      //SliceOnAxis<T><<<blocks, threads, 0, dev_ctx.stream()>>>(output_data, x_dims_gpu_data, 3, ind, width, cur_data);
+      //dev_ctx.Wait();
+      //SliceOnAxis<T><<<blocks, threads, 0, dev_ctx.stream()>>>(output_data, x_dims_gpu_data, 3, 0, temp_dims[3], next_data);
+      //dev_ctx.Wait();
 
-      MaxOut<T><<<blocks, threads, 0, dev_ctx.stream()>>>(cur_data, next_data, x_dims_gpu_data, 3, ind, width, output_data);
+      MaxOut<T><<<blocks, threads, 0, dev_ctx.stream()>>>(ind, 0, x_dims_gpu_data, 3, ind, width, output_data);
       dev_ctx.Wait();
     }
   }
@@ -94,14 +97,16 @@ class RightPoolGradOpCUDAKernel : public framework::OpKernel<T> {
     int grad_num = in_grad->numel();
     int grad_block = NumBlocks(grad_num);
     FillConstant<T><<<grad_block, threads, 0, dev_ctx.stream()>>>(in_grad_data, x->numel(), 0);
+    dev_ctx.Wait();
     std::vector<int> x_dims_v = framework::vectorize<int>(x_dims);
     auto x_dims_gpu_ptr = memory::Alloc(gpu_place, x_dims_v.size() * sizeof(int));
     int *x_dims_gpu_data = reinterpret_cast<int*>(x_dims_gpu_ptr->ptr());
     memory::Copy(gpu_place, x_dims_gpu_data, platform::CPUPlace(), x_dims_v.data(), 
                  sizeof(int) * x_dims_v.size(), dev_ctx.stream());
+    dev_ctx.Wait();
 
-    framework::DDim temp_dims(x_dims);
-    temp_dims[3] = 1;
+    //framework::DDim temp_dims(x_dims);
+    //temp_dims[3] = 1;
 
     int num = framework::product(x_dims) / width;
     int blocks = NumBlocks(num);
@@ -110,33 +115,34 @@ class RightPoolGradOpCUDAKernel : public framework::OpKernel<T> {
     auto max_val_ptr = memory::Alloc(gpu_place, num * sizeof(T));
     T* max_val_data = reinterpret_cast<T*>(max_val_ptr->ptr());
     SliceOnAxis<T><<<blocks, threads, 0, dev_ctx.stream()>>>(x->data<T>(), x_dims_gpu_data, 3, 0, 1, max_val_data);
-    //dev_ctx.Wait();
-    auto cur_val_ptr = memory::Alloc(gpu_place, num * sizeof(T));
-    T* cur_val_data = reinterpret_cast<T*>(cur_val_ptr->ptr());
+    dev_ctx.Wait();
+    //auto cur_val_ptr = memory::Alloc(gpu_place, num * sizeof(T));
+    //T* cur_val_data = reinterpret_cast<T*>(cur_val_ptr->ptr());
 
     // inital the max_ind by 0
     auto max_ind_ptr = memory::Alloc(gpu_place, num * sizeof(int));
     int* max_ind_data = reinterpret_cast<int*>(max_ind_ptr->ptr());
     FillConstant<int><<<blocks, threads, 0, dev_ctx.stream()>>>(max_ind_data, num, 0);
+    dev_ctx.Wait();
 
-    auto grad_ptr = memory::Alloc(gpu_place, num * sizeof(T));
-    T* grad_data = reinterpret_cast<T*>(grad_ptr->ptr());
+    //auto grad_ptr = memory::Alloc(gpu_place, num * sizeof(T));
+    //T* grad_data = reinterpret_cast<T*>(grad_ptr->ptr());
 
     // accumulate gradient on the location with maximum value
-    SliceOnAxis<T><<<blocks, threads, 0, dev_ctx.stream()>>>(out_grad->data<T>(), x_dims_gpu_data, 3, 0, 1, grad_data);
-    ScatterAddOnAxis<T><<<blocks, threads, 0, dev_ctx.stream()>>>(grad_data, max_ind_data, x_dims_gpu_data, 3, in_grad_data);
+    //SliceOnAxis<T><<<blocks, threads, 0, dev_ctx.stream()>>>(out_grad->data<T>(), x_dims_gpu_data, 3, 0, 1, grad_data);
+    //dev_ctx.Wait();
+    ScatterAddOnAxis<T><<<blocks, threads, 0, dev_ctx.stream()>>>(out_grad->data<T>(), 0, max_ind_data, x_dims_gpu_data, 3, in_grad_data);
+    dev_ctx.Wait();
 
     for (int ind = 1; ind < width; ++ind) {
-      SliceOnAxis<T><<<blocks, threads, 0, dev_ctx.stream()>>>(x->data<T>(), x_dims_gpu_data, 3, ind, ind+1, cur_val_data);
-      //dev_ctx.Wait();
-      SliceOnAxis<T><<<blocks, threads, 0, dev_ctx.stream()>>>(out_grad->data<T>(), x_dims_gpu_data, 3, ind, ind+1, grad_data);
-      //dev_ctx.Wait();
+      //SliceOnAxis<T><<<blocks, threads, 0, dev_ctx.stream()>>>(x->data<T>(), x_dims_gpu_data, 3, ind, ind+1, cur_val_data);
+      //SliceOnAxis<T><<<blocks, threads, 0, dev_ctx.stream()>>>(out_grad->data<T>(), x_dims_gpu_data, 3, ind, ind+1, grad_data);
       
-      UpdateMaxInfo<T><<<blocks, threads, 0, dev_ctx.stream()>>>(cur_val_data, num, ind, max_val_data, max_ind_data);
+      UpdateMaxInfo<T><<<blocks, threads, 0, dev_ctx.stream()>>>(x->data<T>(), x_dims_gpu_data, 3, ind, max_val_data, max_ind_data);
 
-      //dev_ctx.Wait();
-      ScatterAddOnAxis<T><<<blocks, threads, 0, dev_ctx.stream()>>>(grad_data, max_ind_data, x_dims_gpu_data, 3, in_grad_data); 
-      //dev_ctx.Wait();
+      dev_ctx.Wait();
+      ScatterAddOnAxis<T><<<blocks, threads, 0, dev_ctx.stream()>>>(out_grad->data<T>(), ind, max_ind_data, x_dims_gpu_data, 3, in_grad_data); 
+      dev_ctx.Wait();
     }
   }
 };

@@ -87,7 +87,8 @@ def load(fname,
          with_background=True,
          with_cat2id=False,
          use_default_label=None,
-         cname2cid=None):
+         cname2cid=None,
+         clip_bbox=True):
     """ Load data records from 'fnames'
 
     Args:
@@ -119,7 +120,7 @@ def load(fname,
         records, cname2cid = load_roidb(fname, samples)
     elif fname.endswith('.json'):
         from . import coco_loader
-        records, cname2cid = coco_loader.load(fname, samples, with_background)
+        records, cname2cid = coco_loader.load(fname, samples, with_background, clip_bbox)
     elif "wider_face" in fname:
         from . import widerface_loader
         records = widerface_loader.load(fname, samples)

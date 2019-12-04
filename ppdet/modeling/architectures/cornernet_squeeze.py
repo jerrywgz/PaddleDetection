@@ -39,9 +39,11 @@ class CornerNetSqueeze(object):
 
     def build(self, feed_vars, mode='train'):
         im = feed_vars['image']
-        fluid.layers.Print(im)
+        im.persistable = True
+        print('image: ', im)
         body_feats = self.backbone(im)
-        fluid.layers.Print(body_feats[0])
+        body_feats[0].persistable = True
+        print('cnv: ', body_feats[0])
 
         if mode == 'train':
             target_vars = [

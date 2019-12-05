@@ -53,7 +53,7 @@ class CornerNetSqueeze(object):
             target = {key: feed_vars[key] for key in target_vars}
             self.corner_head.get_output(body_feats)
             loss = self.corner_head.get_loss(target)
-            return {'loss': loss}
+            return loss
 
     def train(self, feed_vars):
         return self.build(feed_vars, mode='train')

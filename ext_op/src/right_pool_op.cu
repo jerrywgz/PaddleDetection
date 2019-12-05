@@ -43,6 +43,8 @@ public:
     int width = x_dims[3];
     auto& dev_ctx = ctx.cuda_device_context();
 
+    //auto t = ctx.scope().FindVar("hg_pre_1_conv1_weight")->Get<framework::LoDTensor>();
+    //int id = boost::get<platform::CUDAPlace>(t.place()).device;
     framework::DDim temp_dims(x_dims);
     T *output_data = output->mutable_data<T>(x_dims, dev_ctx.GetPlace());
     platform::CUDAPlace gpu_place;
@@ -58,6 +60,7 @@ public:
     memory::Copy(gpu_place, x_dims_gpu_data, platform::CPUPlace(), x_dims_v.data(), 
                  sizeof(int) * x_dims_v.size(), dev_ctx.stream());
     dev_ctx.Wait();
+    LOG(ERROR)<<"right debug ";
     for (int ind = 1; ind < width; ind <<= 1) {
       temp_dims[3] = width - ind;
       int cur_num = framework::product(temp_dims);
@@ -76,6 +79,7 @@ public:
       MaxOut<T><<<blocks, threads, 0, dev_ctx.stream()>>>(ind, 0, x_dims_gpu_data, 3, ind, width, output_data);
       dev_ctx.Wait();
     }
+    LOG(ERROR)<<"right debug ";
   }
 };
 

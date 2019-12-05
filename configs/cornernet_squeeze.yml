@@ -2,8 +2,8 @@ architecture: CornerNetSqueeze
 train_feed: CornerNetTrainFeed
 use_gpu: true
 max_iters: 500000
-log_smooth_window: 20
-log_iter: 20
+log_smooth_window: 1
+log_iter: 1
 save_dir: output
 snapshot_iter: 5000
 metric: COCO
@@ -46,6 +46,6 @@ CornerNetTrainFeed:
     dataset_dir: dataset/coco
     annotation: annotations/instances_train2017.json
     image_dir: train2017
-  num_workers: 16
+  num_workers: 8 
   bufsize: 128
   use_process: true

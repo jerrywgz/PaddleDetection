@@ -1487,7 +1487,7 @@ class CornerTarget(BaseOperator):
             br_regrs.append([fxbr - xbr, fybr - ybr])
             tl_tags.append(ytl * self.output_size[1] + xtl)
             br_tags.append(ybr * self.output_size[1] + xbr)
-        tag_nums[0] = tag_lens
+        tag_nums[0] = np.array(tag_lens, dtype=np.int32)
 
         #tag_mask[:tag_lens] = 1
 

@@ -130,7 +130,7 @@ class LeftPoolGradOpCUDAKernel : public framework::OpKernel<T> {
     // accumulate gradient on the location with maximum value
     //SliceOnAxis<T><<<blocks, threads, 0, dev_ctx.stream()>>>(out_grad->data<T>(), x_dims_gpu_data, 3, width - 1, width, grad_data);
     //dev_ctx.Wait();
-    ScatterAddOnAxis<T><<<blocks, threads, 0, dev_ctx.stream()>>>(out_grad->data<T>(), x_dims_gpu_data, width - 1, max_ind_data, x_dims_gpu_data, 3, in_grad_data);
+    ScatterAddOnAxis<T><<<blocks, threads, 0, dev_ctx.stream()>>>(out_grad->data<T>(), width - 1, max_ind_data, x_dims_gpu_data, 3, in_grad_data);
     dev_ctx.Wait();
 
     for (int ind = 1; ind < width; ++ind) {

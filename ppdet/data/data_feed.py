@@ -1109,10 +1109,10 @@ class CornerNetTrainFeed(DataFeed):
                                   max_tag_len=128)
                  ],
                  batch_transforms=[],
-                 batch_size=56,
+                 batch_size=14,
                  shuffle=True,
                  samples=-1,
-                 drop_last=False,
+                 drop_last=True,
                  bufsize=10,
                  num_workers=2,
                  use_process=False,

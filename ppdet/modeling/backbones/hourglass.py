@@ -94,7 +94,8 @@ def fire_block(x, out_dim, sr=2, stride=1, name=None):
         groups=out_dim // sr,
         param_attr=ParamAttr(name=name + "_conv_3x3_weight"),
         bias_attr=False,
-        name=name + '_conv_3x3')
+        name=name + '_conv_3x3',
+        use_cudnn=False)
     conv2 = fluid.layers.concat(
         [conv_1x1, conv_3x3], axis=1, name=name + '_conv2')
     pattr = ParamAttr(name=name + '_bn2_weight')

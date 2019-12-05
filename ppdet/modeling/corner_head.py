@@ -167,11 +167,18 @@ class CornerHead(object):
         ones = fluid.layers.ones_like(gt)
 
         fg_map = fluid.layers.cast(gt == ones, 'float32')
-        bg_map = fluid.layers.cast(gt < ones, 'float32')
         fg_map.stop_gradient = True
+        num_pos = fluid.layers.reduce_sum(fg_map)
+        min_num = fluid.layers.ones_like(num_pos)
+        num_pos = fluid.layers.elementwise_max(num_pos, min_num)
+        num_pos.stop_gradient = True
+        bg_map = fluid.layers.cast(gt < ones, 'float32')
         bg_map.stop_gradient = True
         neg_weights = fluid.layers.pow(1 - gt, 4) * bg_map
+        neg_weights.stop_gradient = True
         loss = 0
+        #neg_loss_ = 0
+        #pos_loss_ = 0
         for ind, pred in enumerate(preds_clip):
             pos_loss = fluid.layers.log(pred) * fluid.layers.pow(1 - pred,
                                                                  2) * fg_map
@@ -183,13 +190,18 @@ class CornerHead(object):
             print('ind: {}, pos_loss: {}'.format(ind, pos_loss))
             neg_loss = fluid.layers.reduce_sum(neg_loss)
             print('ind: {}, neg_loss: {}'.format(ind, neg_loss))
-            num_pos = fluid.layers.reduce_sum(fg_map)
-            ones = fluid.layers.assign(np.array([1], dtype='float32'))
-            num_pos = fluid.layers.elementwise_max(num_pos, ones)
-            num_pos.stop_gradient = True
+            #num_pos = fluid.layers.reduce_sum(fg_map)
+            #ones = fluid.layers.assign(np.array([1], dtype='float32'))
+            #ones = fluid.layers.ones_like(num_pos)
+            #num_pos = fluid.layers.elementwise_max(num_pos, ones)
+            #num_pos.stop_gradient = True
             focal_loss_ = (neg_loss + pos_loss) / num_pos
             loss -= focal_loss_
-        return loss, pos_loss, neg_loss, preds_clip[0]
+            #neg_loss_ -= neg_loss / num_pos
+            #pos_loss_ -= pos_loss / num_pos
+        #neg_loss_.stop_gradient = True
+        #pos_loss_.stop_gradient = True
+        return loss#, pos_loss, neg_loss, preds_clip[0]#, pos_loss_, neg_loss_
 
     def mask_feat(self, feat, ind):
         feat_t = fluid.layers.transpose(feat, [0, 2, 3, 1])
@@ -211,6 +223,7 @@ class CornerHead(object):
 
         push = 0
         total_num = 0
+        #fluid.layers.Print(gt_num)
         for ind in range(self.batch_size):
             num_ind = fluid.layers.slice(
                 gt_num, axes=[0], starts=[ind], ends=[ind + 1])
@@ -219,11 +232,14 @@ class CornerHead(object):
             total_num += num_ind
             num_ind2 = (num_ind - 1) * num_ind
             num_ind2 = fluid.layers.cast(num_ind2, 'float32')
+            num_ind2.stop_gradient = True
 
             tag_mean_ind = fluid.layers.slice(tag_mean, axes=[0], starts=[pre_num], ends=[total_num])
             num_ind = fluid.layers.cast(num_ind, 'float32')
+            num_ind.stop_gradient = True
             tag_mean_T = fluid.layers.transpose(tag_mean_ind, [1, 0])
             shape = fluid.layers.shape(tag_mean_ind)
+            shape.stop_gradient = True
             tag_mean_T = fluid.layers.expand(tag_mean_T, shape)
             dist = 1 - fluid.layers.abs(tag_mean_T - tag_mean_ind)
             dist = fluid.layers.relu(dist) - 1 / (num_ind + 1e-4)
@@ -235,6 +251,7 @@ class CornerHead(object):
         num = fluid.layers.reduce_sum(gt_num)
         off_loss = fluid.layers.smooth_l1(off, gt_off)
         num = fluid.layers.cast(num, 'float32')
+        num.stop_gradient = True
         off_loss = fluid.layers.reduce_sum(off_loss) / (num + 1e-4)
         print('off_loss: ', off_loss)
         return off_loss
@@ -249,17 +266,23 @@ class CornerHead(object):
         gt_br_ind = targets['br_tags']
 
         focal_loss = 0
+        #pos_loss = 0
+        #neg_loss = 0
         print('gt_tl_heat: ', gt_tl_heat)
-        focal_loss_, pos_loss, neg_loss, pred_clip = self.focal_loss(self.tl_heats, gt_tl_heat)
+        focal_loss_ = self.focal_loss(self.tl_heats, gt_tl_heat)
         focal_loss += focal_loss_
-        print('self.br_heats[0]: ', self.br_heats[0])
-        print('self.br_heats[1]: ', self.br_heats[1])
-        print('tl_pos_loss: ', pos_loss)
-        print('tl_neg_loss: ', neg_loss)
-        print('pred_clip: ',pred_clip)
-        print('gt_br_heat: ', gt_br_heat)
-        focal_loss_, pos_loss, neg_loss, pred_clip = self.focal_loss(self.br_heats, gt_br_heat)
+        #pos_loss += pos_loss_
+        #neg_loss += neg_loss_
+        #print('self.br_heats[0]: ', self.br_heats[0])
+        #print('self.br_heats[1]: ', self.br_heats[1])
+        #print('tl_pos_loss: ', pos_loss)
+        #print('tl_neg_loss: ', neg_loss)
+        #print('pred_clip: ',pred_clip)
+        #print('gt_br_heat: ', gt_br_heat)
+        focal_loss_ = self.focal_loss(self.br_heats, gt_br_heat)
         focal_loss += focal_loss_
+        #pos_loss += pos_loss_
+        #neg_loss += neg_loss_
 
         pull_loss = 0
         push_loss = 0
@@ -295,5 +318,9 @@ class CornerHead(object):
         print('pull_loss: ', pull_loss)
         print('push_loss: ', push_loss)
         print('off_loss: ', off_loss)
-        loss = (focal_loss + self.pull_weight * pull_loss + self.push_weight * push_loss + off_loss) / len(self.tl_heats)
-        return loss
+        pull_loss = self.pull_weight * pull_loss
+        push_loss = self.push_weight * push_loss
+
+        loss = (focal_loss + pull_loss + push_loss + off_loss) / len(self.tl_heats)
+ 
+        return {'loss':loss}

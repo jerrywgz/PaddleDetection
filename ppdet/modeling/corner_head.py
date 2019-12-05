@@ -32,6 +32,7 @@ def corner_pool(x, dim, pool1, pool2, name=None):
     p1_conv1 = _conv_norm(x, 3, 128, pad=1, act='relu', name=name + '_p1_conv1')
     pool1 = pool1(p1_conv1)
     p2_conv1 = _conv_norm(x, 3, 128, pad=1, act='relu', name=name + '_p2_conv1')
+    print('pool2: ',pool2)
     pool2 = pool2(p2_conv1)
 
     p_conv1 = fluid.layers.conv2d(
@@ -176,7 +177,7 @@ class CornerHead(object):
         bg_map.stop_gradient = True
         neg_weights = fluid.layers.pow(1 - gt, 4) * bg_map
         neg_weights.stop_gradient = True
-        loss = 0
+        loss = fluid.layers.assign(np.array([0], dtype='float32'))
         #neg_loss_ = 0
         #pos_loss_ = 0
         for ind, pred in enumerate(preds_clip):
@@ -221,20 +222,25 @@ class CornerHead(object):
         tag1 = fluid.layers.reduce_sum(tag1)
         pull = tag0 + tag1
 
-        push = 0
-        total_num = 0
+        push = fluid.layers.assign(np.array([0], dtype='float32'))
+        total_num = fluid.layers.assign(np.array([0], dtype='int32'))
         #fluid.layers.Print(gt_num)
+        #fluid.layers.Print(tag_mean)
+        #fluid.layers.Print(tag_mean)
         for ind in range(self.batch_size):
             num_ind = fluid.layers.slice(
                 gt_num, axes=[0], starts=[ind], ends=[ind + 1])
             num_ind = fluid.layers.reduce_sum(num_ind)
-            pre_num = total_num
-            total_num += num_ind
+            #pre_num = total_num
+            #total_num += num_ind
             num_ind2 = (num_ind - 1) * num_ind
             num_ind2 = fluid.layers.cast(num_ind2, 'float32')
             num_ind2.stop_gradient = True
+            #fluid.layers.Print(total_num)
+            #fluid.layers.Print(num_ind)
 
-            tag_mean_ind = fluid.layers.slice(tag_mean, axes=[0], starts=[pre_num], ends=[total_num])
+            tag_mean_ind = fluid.layers.slice(tag_mean, axes=[0], starts=[total_num], ends=[total_num + num_ind])
+            total_num = total_num + num_ind
             num_ind = fluid.layers.cast(num_ind, 'float32')
             num_ind.stop_gradient = True
             tag_mean_T = fluid.layers.transpose(tag_mean_ind, [1, 0])

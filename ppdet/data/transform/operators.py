@@ -1411,8 +1411,7 @@ class CornerTarget(BaseOperator):
                  num_classes,
                  gaussian_bump=True,
                  gaussian_rad=-1,
-                 gaussian_iou=0.3,
-                 max_tag_len=128):
+                 gaussian_iou=0.3):
         """
         """
         super(CornerTarget, self).__init__()
@@ -1421,7 +1420,6 @@ class CornerTarget(BaseOperator):
         self.gaussian_bump = gaussian_bump
         self.gaussian_rad = gaussian_rad
         self.gaussian_iou = gaussian_iou
-        self.max_tag_len = max_tag_len
 
     def __call__(self, sample, context=None):
         """ """
@@ -1487,6 +1485,7 @@ class CornerTarget(BaseOperator):
             br_regrs.append([fxbr - xbr, fybr - ybr])
             tl_tags.append(ytl * self.output_size[1] + xtl)
             br_tags.append(ybr * self.output_size[1] + xbr)
+
         tag_nums[0] = np.array(tag_lens, dtype=np.int32)
 
         #tag_mask[:tag_lens] = 1

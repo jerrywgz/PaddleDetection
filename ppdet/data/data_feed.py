@@ -1105,8 +1105,7 @@ class CornerNetTrainFeed(DataFeed):
                                     is_channel_first=False),
                      Permute(to_bgr=False),
                      CornerTarget(output_size=[64, 64],
-                                  num_classes=80, 
-                                  max_tag_len=128)
+                                  num_classes=80)
                  ],
                  batch_transforms=[],
                  batch_size=14,

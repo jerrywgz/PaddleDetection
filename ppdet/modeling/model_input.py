@@ -117,7 +117,6 @@ def create_feed(feed, iterable=False, sub_prog_feed=False):
             
     for t in sample_transform:
         if isinstance(t, CornerTarget):
-            max_tag_len = t.max_tag_len
             output_size = t.output_size
             num_classes = t.num_classes
             corner_target_var = [

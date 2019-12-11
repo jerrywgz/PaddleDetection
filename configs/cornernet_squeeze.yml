@@ -48,4 +48,4 @@ CornerNetTrainFeed:
     image_dir: train2017
   num_workers: 8 
   bufsize: 128
-  use_process: false
+  use_process: true

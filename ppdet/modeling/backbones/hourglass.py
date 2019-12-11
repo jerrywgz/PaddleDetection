@@ -84,8 +84,7 @@ def fire_block(x, out_dim, sr=2, stride=1, name=None):
         stride=stride,
         param_attr=ParamAttr(name=name + "_conv_1x1_weight"),
         bias_attr=False,
-        name=name + '_conv_1x1',
-        use_cudnn=False)
+        name=name + '_conv_1x1')
     conv_3x3 = fluid.layers.conv2d(
         conv1,
         filter_size=3,
@@ -161,7 +160,6 @@ class Hourglass(object):
 
     def __call__(self, input, name='hg'):
         inter = self.pre(input, name + '_pre')
-        print('inter: ', inter)
         cnvs = []
         for ind in range(self.stack):
             hg = self.hg_module(inter, name=name + '_hgs_' + str(ind))
@@ -180,9 +178,7 @@ class Hourglass(object):
 
     def pre(self, x, name=None):
         conv = _conv_norm(x, 7, 128, stride=2, pad=3, act='relu', name=name + '_0')
-        print('conv: ', conv)
         res1 = residual_block(conv, 256, stride=2, name=name + '_1')
-        print('res1: ', res1)
         res2 = residual_block(res1, 256, stride=2, name=name + '_2')
         return res2
 

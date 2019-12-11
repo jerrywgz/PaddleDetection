@@ -332,6 +332,7 @@ def main():
         if it % cfg.log_iter == 0 and (not FLAGS.dist or trainer_id == 0):
             strs = 'iter: {}, lr: {:.6f}, {}, time: {:.3f}, eta: {}'.format(
                 it, np.mean(outs[-1]), logs, time_cost, eta)
+            #print(strs)
             logger.info(strs)
 
         if (it > 0 and it % cfg.snapshot_iter == 0 or it == cfg.max_iters - 1) \

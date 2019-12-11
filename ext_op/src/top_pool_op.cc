@@ -23,8 +23,7 @@ public:
 
   void InferShape(framework::InferShapeContext* ctx) const override {
     PADDLE_ENFORCE(ctx->HasInput("X"), "Input(X) should not be null");
-    auto x_dims = ctx->GetInputDim("X");
-    ctx->SetOutputDim("Output", x_dims);
+    ctx->ShareDim("X", /*->*/ "Output");
   }
 
 protected:
@@ -57,10 +56,9 @@ protected:
     PADDLE_ENFORCE(ctx->HasInput("X"), "Input(X) should not be null");
     PADDLE_ENFORCE(ctx->HasInput(framework::GradVarName("Output")),
                    "Input(Output@GRAD) should not be null");
-    auto dim_x = ctx->GetInputDim("X");
-    if (ctx->HasOutput(framework::GradVarName("X"))) {
-      ctx->SetOutputDim(framework::GradVarName("X"), dim_x);
-    }
+    
+    auto out_grad_name = framework::GradVarName("Output");
+    ctx->ShareDim(out_grad_name, framework::GradVarName("X"));
   }
 
   framework::OpKernelType GetExpectedKernelType(

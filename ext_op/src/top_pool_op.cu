@@ -1,11 +1,12 @@
 /* Copyright (c) 2019 PaddlePaddle Authors. All Rights Reserved.
+
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
     http://www.apache.org/licenses/LICENSE-2.0
 
-Unless required by applicable law or agreed to in writing, software
+GUnless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
@@ -40,46 +41,29 @@ public:
     auto *output = ctx.Output<Tensor>("Output");
     auto *x_data = x->data<T>();
     auto x_dims = x->dims();
+    int NC_num = x_dims[0] * x_dims[1];
     int height = x_dims[2];
+    int width = x_dims[3];
     auto& dev_ctx = ctx.cuda_device_context();
 
     //auto t = ctx.scope().FindVar("hg_pre_1_conv1_weight")->Get<framework::LoDTensor>();
     //int id = boost::get<platform::CUDAPlace>(t.place()).device;
-    framework::DDim temp_dims(x_dims);
     T *output_data = output->mutable_data<T>(x_dims, dev_ctx.GetPlace());
-    platform::CUDAPlace gpu_place;
+    auto gpu_place = boost::get<platform::CUDAPlace>(dev_ctx.GetPlace());
     
     memory::Copy(gpu_place, output_data, gpu_place, x_data,
                 sizeof(T) * x->numel(), dev_ctx.stream());
     dev_ctx.Wait();
 
     int threads = kNumCUDAThreads;
-    std::vector<int> x_dims_v = framework::vectorize<int>(x_dims);
-    auto x_dims_gpu_ptr = memory::Alloc(gpu_place, x_dims_v.size() * sizeof(int));
-    int *x_dims_gpu_data = reinterpret_cast<int*>(x_dims_gpu_ptr->ptr());
-    memory::Copy(gpu_place, x_dims_gpu_data, platform::CPUPlace(), x_dims_v.data(), 
-                 sizeof(int) * x_dims_v.size(), dev_ctx.stream());
-    dev_ctx.Wait();
-    LOG(ERROR)<<"top debug ";
     for (int ind = 1; ind < height; ind <<= 1) {
-      temp_dims[2] = height - ind;
-      int cur_num = framework::product(temp_dims);
-      //int bytes = cur_num * sizeof(T);
-      //auto cur_ptr = memory::Alloc(gpu_place, bytes);
-      //auto next_ptr = memory::Alloc(gpu_place, bytes);
-      //T* cur_data = reinterpret_cast<T*>(cur_ptr->ptr());
-      //T* next_data = reinterpret_cast<T*>(next_ptr->ptr());
+      int cur_num = NC_num * width * (height - ind);
       int blocks = NumBlocks(cur_num);
 
-      //SliceOnAxis<T><<<blocks, threads, 0, dev_ctx.stream()>>>(output_data, x_dims_gpu_data, 2, 0, temp_dims[2], cur_data);
-      //dev_ctx.Wait();
-      //SliceOnAxis<T><<<blocks, threads, 0, dev_ctx.stream()>>>(output_data, x_dims_gpu_data, 2, ind, height, next_data);
-      //dev_ctx.Wait();
-
-      MaxOut<T><<<blocks, threads, 0, dev_ctx.stream()>>>(0, ind, x_dims_gpu_data, 2, 0, temp_dims[2], output_data);
+      MaxOut<T><<<blocks, threads>>>(ind, NC_num, height, width, 2, 0, height - ind, output_data);
       dev_ctx.Wait();
     }
-    LOG(ERROR)<<"top debug ";
+    dev_ctx.Wait();
   }
 };
 
@@ -94,60 +78,37 @@ class TopPoolGradOpCUDAKernel : public framework::OpKernel<T> {
     
     auto& dev_ctx = ctx.cuda_device_context();
     T* in_grad_data = in_grad->mutable_data<T>(x_dims, dev_ctx.GetPlace());
-    platform::CUDAPlace gpu_place;
+    auto gpu_place = boost::get<platform::CUDAPlace>(dev_ctx.GetPlace());
     
     int threads = kNumCUDAThreads;
+    int NC_num = x_dims[0] * x_dims[1];
     int height = x_dims[2];
+    int width = x_dims[3];
     int grad_num = in_grad->numel();
     int grad_block = NumBlocks(grad_num);
-    FillConstant<T><<<grad_block, threads, 0, dev_ctx.stream()>>>(in_grad_data, x->numel(), 0);
-    dev_ctx.Wait();
-    std::vector<int> x_dims_v = framework::vectorize<int>(x_dims);
-    auto x_dims_gpu_ptr = memory::Alloc(gpu_place, x_dims_v.size() * sizeof(int));
-    int *x_dims_gpu_data = reinterpret_cast<int*>(x_dims_gpu_ptr->ptr());
-    memory::Copy(gpu_place, x_dims_gpu_data, platform::CPUPlace(), x_dims_v.data(), 
-                 sizeof(int) * x_dims_v.size(), dev_ctx.stream());
-    dev_ctx.Wait();
+    FillConstant<T><<<grad_block, threads>>>(in_grad_data, grad_num, 0);
 
-    //framework::DDim temp_dims(x_dims);
-    //temp_dims[2] = 1;
-
-    int num = framework::product(x_dims) / height;
+    int num = grad_num / height;
     int blocks = NumBlocks(num);
 
     // inital the max_value by the first row of input(x) 
     auto max_val_ptr = memory::Alloc(gpu_place, num * sizeof(T));
     T* max_val_data = reinterpret_cast<T*>(max_val_ptr->ptr());
-    SliceOnAxis<T><<<blocks, threads, 0, dev_ctx.stream()>>>(x->data<T>(), x_dims_gpu_data, 2, height - 1, height, max_val_data);
-    dev_ctx.Wait();
-    //auto cur_val_ptr = memory::Alloc(gpu_place, num * sizeof(T));
-    //T* cur_val_data = reinterpret_cast<T*>(cur_val_ptr->ptr());
+    SliceOnAxis<T><<<blocks, threads>>>(x->data<T>(), NC_num, height, width, 2, height - 1, height, max_val_data);
 
     // inital the max_ind by 0
     auto max_ind_ptr = memory::Alloc(gpu_place, num * sizeof(int));
     int* max_ind_data = reinterpret_cast<int*>(max_ind_ptr->ptr());
-    FillConstant<int><<<blocks, threads, 0, dev_ctx.stream()>>>(max_ind_data, num, height - 1);
-    dev_ctx.Wait();
-
-    //auto grad_ptr = memory::Alloc(gpu_place, num * sizeof(T));
-    //T* grad_data = reinterpret_cast<T*>(grad_ptr->ptr());
+    FillConstant<int><<<blocks, threads>>>(max_ind_data, num, height - 1);
 
     // accumulate gradient on the location with maximum value
-    //SliceOnAxis<T><<<blocks, threads, 0, dev_ctx.stream()>>>(out_grad->data<T>(), x_dims_gpu_data, 2, height - 1, height, grad_data);
-    //dev_ctx.Wait();
-    ScatterAddOnAxis<T><<<blocks, threads, 0, dev_ctx.stream()>>>(out_grad->data<T>(), height - 1, max_ind_data, x_dims_gpu_data, 2, in_grad_data);
-    dev_ctx.Wait();
+    ScatterAddOnAxis<T><<<blocks, threads>>>(out_grad->data<T>(), height - 1, max_ind_data, NC_num, height, width, 2, in_grad_data);
 
     for (int ind = 1; ind < height; ++ind) {
-      //SliceOnAxis<T><<<blocks, threads, 0, dev_ctx.stream()>>>(x->data<T>(), x_dims_gpu_data, 2, height - ind - 1, height - ind, cur_val_data);
-      //SliceOnAxis<T><<<blocks, threads, 0, dev_ctx.stream()>>>(out_grad->data<T>(), x_dims_gpu_data, 2, height - ind - 1, height - ind, grad_data);
-      
-      UpdateMaxInfo<T><<<blocks, threads, 0, dev_ctx.stream()>>>(x->data<T>(), x_dims_gpu_data, 2, height - ind - 1, max_val_data, max_ind_data);
-
-      dev_ctx.Wait();
-      ScatterAddOnAxis<T><<<blocks, threads, 0, dev_ctx.stream()>>>(out_grad->data<T>(), height - ind - 1, max_ind_data, x_dims_gpu_data, 2, in_grad_data); 
-      dev_ctx.Wait();
+      UpdateMaxInfo<T><<<blocks, threads>>>(x->data<T>(), NC_num, height, width, 2, height - ind - 1, max_val_data, max_ind_data);
+      ScatterAddOnAxis<T><<<blocks, threads>>>(out_grad->data<T>(), height - ind - 1, max_ind_data, NC_num, height, width, 2, in_grad_data); 
     }
+    dev_ctx.Wait();
   }
 };
 

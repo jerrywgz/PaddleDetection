@@ -39,11 +39,7 @@ class CornerNetSqueeze(object):
 
     def build(self, feed_vars, mode='train'):
         im = feed_vars['image']
-        im.persistable = True
-        print('image: ', im)
         body_feats = self.backbone(im)
-        body_feats[0].persistable = True
-        print('cnv: ', body_feats[0])
 
         if mode == 'train':
             target_vars = [
@@ -55,5 +51,11 @@ class CornerNetSqueeze(object):
             loss = self.corner_head.get_loss(target)
             return loss
 
+        #elif mode == 'test':
+        #    self.corner_head.get_prediction(body_feats[-1])
+
     def train(self, feed_vars):
         return self.build(feed_vars, mode='train')
+
+    #def train(self, feed_vars):
+    #    return self.build(feed_vars, mode='test')

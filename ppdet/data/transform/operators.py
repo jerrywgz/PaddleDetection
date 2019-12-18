@@ -446,11 +446,11 @@ class NormalizeImage(BaseOperator):
                 im = sample[k]
                 im = im.astype(np.float32, copy=False)
                 if self.is_channel_first:
-                    mean = np.array(self.mean)[:, np.newaxis, np.newaxis]
-                    std = np.array(self.std)[:, np.newaxis, np.newaxis]
+                    mean = np.array(self.mean)[:, np.newaxis, np.newaxis].astype(np.float32)
+                    std = np.array(self.std)[:, np.newaxis, np.newaxis].astype(np.float32)
                 else:
-                    mean = np.array(self.mean)[np.newaxis, np.newaxis, :]
-                    std = np.array(self.std)[np.newaxis, np.newaxis, :]
+                    mean = np.array(self.mean)[np.newaxis, np.newaxis, :].astype(np.float32)
+                    std = np.array(self.std)[np.newaxis, np.newaxis, :].astype(np.float32)
                 if self.is_scale:
                     im = im / 255.0
                 im -= mean
@@ -1429,12 +1429,6 @@ class CornerTarget(BaseOperator):
         br_heatmaps = np.zeros(
             (self.num_classes, self.output_size[0], self.output_size[1]),
             dtype=np.float32)
-        #tl_regrs    = np.zeros((self.max_tag_len, 2), dtype=np.float32)
-        #br_regrs    = np.zeros((self.max_tag_len, 2), dtype=np.float32)
-
-        #tl_tags     = np.zeros((self.max_tag_len), dtype=np.int64)
-        #br_tags     = np.zeros((self.max_tag_len), dtype=np.int64)
-        #tag_mask = np.zeros(max_tag_len), dtype=np.uint8)
 
         tl_regrs = []
         br_regrs = []
@@ -1476,10 +1470,6 @@ class CornerTarget(BaseOperator):
                 tl_heatmaps[gt_class[i][0], ytl, xtl] = 1
                 br_heatmaps[gt_class[i][0], ybr, xbr] = 1
 
-            #tl_regrs[tag_ind, :] = [fxtl - xtl, fytl - ytl]
-            #br_regrs[tag_ind, :] = [fxbr - xbr, fybr - ybr]
-            #tl_tags[tag_ind] = ytl * output_size[1] + xtl
-            #br_tags[tag_ind] = ybr * output_size[1] + xbr
             tag_lens += 1
             tl_regrs.append([fxtl - xtl, fytl - ytl])
             br_regrs.append([fxbr - xbr, fybr - ybr])
@@ -1487,8 +1477,6 @@ class CornerTarget(BaseOperator):
             br_tags.append(ybr * self.output_size[1] + xbr)
 
         tag_nums[0] = np.array(tag_lens, dtype=np.int32)
-
-        #tag_mask[:tag_lens] = 1
 
         sample['tl_heatmaps'] = tl_heatmaps
         sample['br_heatmaps'] = br_heatmaps
@@ -1505,31 +1493,40 @@ class CornerTarget(BaseOperator):
 class CornerCrop(BaseOperator):
     def __init__(self,
                  random_scales=[0.6, 0.7, 0.8, 0.9, 1., 1.1, 1.2, 1.3],
-                 input_size=511,
-                 border=128):
+                 border=128,
+                 is_train=True,
+                 input_size=511):
         """
         """
         super(CornerCrop, self).__init__()
         self.random_scales = random_scales
-        self.input_size = input_size
         self.border = border
+        self.is_train = is_train
+        self.input_size = input_size
 
     def __call__(self, sample, context=None):
         """"""
-        scale = np.random.choice(self.random_scales)
-        height = int(sample['h'] * scale)
-        width = int(sample['w'] * scale)
+        im_h, im_w = int(sample['h']), int(sample['w'])
+        if self.is_train:
+            scale = np.random.choice(self.random_scales)
+            height = int(self.input_size * scale)
+            width = int(self.input_size * scale)
 
-        cropped_image = np.zeros((height, width, 3), dtype='float32')
+            w_border = self._get_border(self.border, sample['w'])
+            h_border = self._get_border(self.border, sample['h'])
 
-        w_border = self._get_border(self.border, sample['w'])
-        h_border = self._get_border(self.border, sample['h'])
+            ctx = np.random.randint(low=w_border, high=sample['w'] - w_border)
+            cty = np.random.randint(low=h_border, high=sample['h'] - h_border)
 
-        ctx = np.random.randint(low=w_border, high=sample['w'] - w_border)
-        cty = np.random.randint(low=h_border, high=sample['h'] - h_border)
+        else:
+            cty, ctx = im_h//2, im_w//2
+            height = im_h | 127
+            width = im_w | 127
 
-        x0, x1 = max(ctx - width // 2, 0), min(ctx + width // 2, int(sample['w']))
-        y0, y1 = max(cty - height // 2, 0), min(cty + height // 2, int(sample['h']))
+        cropped_image = np.zeros((height, width, 3), dtype=np.float32)
+
+        x0, x1 = max(ctx - width // 2, 0), min(ctx + width // 2, im_w)
+        y0, y1 = max(cty - height // 2, 0), min(cty + height // 2, im_h)
 
         left_w, right_w = ctx - x0, x1 - ctx
         top_h, bottom_h = cty - y0, y1 - cty
@@ -1541,17 +1538,51 @@ class CornerCrop(BaseOperator):
         cropped_image[y_slice, x_slice, :] = sample['image'][y0:y1, x0:x1, :]
 
         sample['image'] = cropped_image
-        # crop detections
-        gt_bbox = sample['gt_bbox']
-        gt_bbox[:, 0:4:2] -= x0
-        gt_bbox[:, 1:4:2] -= y0
-        gt_bbox[:, 0:4:2] += cropped_ctx - left_w
-        gt_bbox[:, 1:4:2] += cropped_cty - top_h
+        sample['h'], sample['w'] = height, width
+
+        if self.is_train:
+            # crop detections
+            gt_bbox = sample['gt_bbox'].copy()
+            gt_bbox[:, 0:4:2] -= x0
+            gt_bbox[:, 1:4:2] -= y0
+            gt_bbox[:, 0:4:2] += cropped_ctx - left_w
+            gt_bbox[:, 1:4:2] += cropped_cty - top_h
+            sample['gt_bbox'] = gt_bbox.copy()
+        else:
+            sample['borders'] = np.array([
+                cropped_cty - top_h,
+                cropped_cty + bottom_h,
+                cropped_ctx - left_w,
+                cropped_ctx + right_w], dtype=np.float32)
 
         return sample
+
+        
 
     def _get_border(self, border, size):
         i = 1
         while size - border // i <= border // i:
             i *= 2
         return border // i
+
+@register_op
+class CornerRatio(BaseOperator):
+    def __init__(self,
+                 input_size=511,
+                 output_size=64):
+        """
+        """
+        super(CornerRatio, self).__init__()
+        self.input_size = input_size
+        self.output_size = output_size
+
+    def __call__(self, sample, context=None):
+        """"""
+        scale  = (self.input_size + 1) // self.output_size
+        out_height, out_width = (sample['h'] + 1) // scale, (sample['w'] + 1) // scale
+        height_ratio = out_height / float(sample['h'])
+        width_ratio  = out_width  / float(sample['w'])
+        sample['ratios']  = np.array([height_ratio, width_ratio])
+
+        return sample
+

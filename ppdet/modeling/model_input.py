@@ -35,6 +35,8 @@ feed_var_def = [
     {'name': 'gt_score',      'shape': [1],  'dtype': 'float32', 'lod_level': 0},
     {'name': 'im_shape',      'shape': [3],  'dtype': 'float32', 'lod_level': 0},
     {'name': 'im_size',       'shape': [2],  'dtype': 'int32',   'lod_level': 0},
+    {'name': 'ratios',        'shape': [2],  'dtype': 'float32', 'lod_level': 0},
+    {'name': 'borders',        'shape': [4],  'dtype': 'float32', 'lod_level': 0},
 ]
 
 # yapf: enable

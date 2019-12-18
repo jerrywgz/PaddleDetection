@@ -67,48 +67,126 @@ def corner_pool(x, dim, pool1, pool2, name=None):
     relu1 = fluid.layers.relu(p_bn1 + bn1)
     conv2 = _conv_norm(relu1, 3, dim, pad=1, act='relu', name=name + '_conv2')
     return conv2
-"""
+
+def mask_feat(feat, ind, is_train=True):
+    feat_t = fluid.layers.transpose(feat, [0, 2, 3, 1])
+    C = feat_t.shape[3]
+    feat_r = fluid.layers.reshape(feat_t, [-1, C])
+    feat_g = fluid.layers.gather(feat_r, ind)
+    if is_train:
+        return fluid.layers.lod_reset(feat_g, ind)
+    return feat_g
+
 def nms(heat):
-    hmax = fluid.layers.pool2d(heat, 1)
-    keep = fluid.layers.cast(hmax == heat, 'float32')
+    hmax = fluid.layers.pool2d(heat, pool_size=3, pool_padding=1)
+    keep = fluid.layers.cast(heat == hmax, 'float32')
     return heat * keep
 
-def topk(scores, K):
-    C, H, W = scores.shape[1], scores.shape[2], scores.shape[3]
-    topk_scores, topk_inds = fluid.layers.topk(fluid.layers.reshape(scores, [-1, C*H*W]), K)
-    topk_clses = topk_inds / (H * W) 
-    topk_inds = topk_inds % (H * W)
-    topk_ys = topk_inds / W
-    topk_xs = topk_inds % W
+def _topk(scores, batch_size, height, width, K):
+    scores_r = fluid.layers.reshape(scores, [batch_size, -1])
+    topk_scores, topk_inds = fluid.layers.topk(scores_r, K)
+    topk_clses = topk_inds / (height * width) 
+    topk_inds = topk_inds % (height * width)
+    topk_ys = fluid.layers.cast(topk_inds / width, 'float32')
+    topk_xs = fluid.layers.cast(topk_inds % width, 'float32')
     return topk_scores, topk_inds, topk_clses, topk_ys, topk_xs
 
-def decode(tl_heat, br_heat, tl_tag, br_tag, tl_regr, br_regr, K=100, ae_threhold=1, num_dets=1000):
+def filter_scores(scores, index_list):
+    for ind in index_list:
+        tmp = scores * fluid.layers.cast((1 - ind), 'float32') 
+        scores = tmp - fluid.layers.cast(ind, 'float32')
+    return scores
+
+def decode(tl_heat, br_heat, tl_tag, br_tag, tl_regr, br_regr, ae_threshold=1, num_dets=1000, K=100):
+    shape = fluid.layers.shape(tl_heat)
+    bs, H, W = shape[0], shape[2], shape[3]
+
     tl_heat = fluid.layers.sigmoid(tl_heat)
     br_heat = fluid.layers.sigmoid(br_heat)
 
-    tl_heat = nms(tl_heat) 
-    br_heat = nms(br_heat)   
+    tl_heat_nms = nms(tl_heat) 
+    br_heat_nms = nms(br_heat)   
 
-    tl_scores, tl_inds, tl_clses, tl_ys, tl_xs = _topk(tl_heat, K=K)
-    br_scores, br_inds, br_clses, br_ys, br_xs = _topk(br_heat, K=K)
+    tl_scores, tl_inds, tl_clses, tl_ys, tl_xs = _topk(tl_heat_nms, bs, H, W, K)
+    br_scores, br_inds, br_clses, br_ys, br_xs = _topk(br_heat_nms, bs, H, W, K)
 
     tl_ys = fluid.layers.expand(fluid.layers.reshape(tl_ys, [-1, K, 1]), [1, 1, K])
     tl_xs = fluid.layers.expand(fluid.layers.reshape(tl_xs, [-1, K, 1]), [1, 1, K])
     br_ys = fluid.layers.expand(fluid.layers.reshape(br_ys, [-1, 1, K]), [1, K, 1])
     br_xs = fluid.layers.expand(fluid.layers.reshape(br_xs, [-1, 1, K]), [1, K, 1])
-"""
+
+    bs_range = fluid.layers.range(start=0, end=bs, step=1, dtype='int32')
+    bs_offset = bs_range * H * W 
+    tl_inds = fluid.layers.reshape(tl_inds + bs_offset, [-1, 1])
+    br_inds = fluid.layers.reshape(br_inds + bs_offset, [-1, 1])
+    
+    tl_regr = mask_feat(tl_regr, tl_inds, False) 
+    br_regr = mask_feat(br_regr, br_inds, False)
+    tl_regr = fluid.layers.reshape(tl_regr, [-1, K, 1, 2])
+    br_regr = fluid.layers.reshape(br_regr, [-1, 1, K, 2])
+
+    tl_xs = tl_xs + tl_regr[:,:,:,0]
+    tl_ys = tl_ys + tl_regr[:,:,:,1]
+    br_xs = br_xs + br_regr[:,:,:,0]
+    br_ys = br_ys + br_regr[:,:,:,1]
+    bboxes = fluid.layers.stack([tl_xs, tl_ys, br_xs, br_ys], axis=-1)
+
+    tl_tag = mask_feat(tl_tag, tl_inds, False)
+    br_tag = mask_feat(br_tag, br_inds, False)
+    tl_tag = fluid.layers.expand(fluid.layers.reshape(tl_tag, [-1, K, 1]), [1, 1, K])
+    br_tag = fluid.layers.expand(fluid.layers.reshape(br_tag, [-1, 1, K]), [1, K, 1])
+    dists = fluid.layers.abs(tl_tag - br_tag)
+
+    tl_scores = fluid.layers.expand(fluid.layers.reshape(tl_scores, [-1, K, 1]), [1, 1, K])
+    br_scores = fluid.layers.expand(fluid.layers.reshape(br_scores, [-1, 1, K]), [1, K, 1])
+    scores = (tl_scores + br_scores) / 2.
+
+    tl_clses = fluid.layers.expand(fluid.layers.reshape(tl_clses, [-1, K, 1]), [1, 1, K])
+    br_clses = fluid.layers.expand(fluid.layers.reshape(br_clses, [-1, 1, K]), [1, K, 1])
+    cls_inds = fluid.layers.cast(tl_clses != br_clses, 'int32')
+    dist_inds = fluid.layers.cast(dists > ae_threshold, 'int32')
+
+    width_inds = fluid.layers.cast(br_xs < tl_xs, 'int32')
+    height_inds = fluid.layers.cast(br_ys < tl_ys, 'int32')
+
+    scores = filter_scores(scores, [cls_inds, dist_inds, width_inds, height_inds])
+    scores = fluid.layers.reshape(scores, [-1, K * K])
+
+    scores, inds = fluid.layers.topk(scores, num_dets)
+    scores = fluid.layers.reshape(scores, [-1, num_dets, 1])
+
+    bs_offset = bs_range * K * K
+    inds = fluid.layers.reshape(inds + bs_offset, [-1])
+    bboxes = fluid.layers.reshape(bboxes, [-1, 4])
+    bboxes = fluid.layers.reshape(fluid.layers.gather(bboxes, inds), [-1, num_dets, 4])
+
+    clses = fluid.layers.reshape(tl_clses, [-1, 1])
+    clses = fluid.layers.reshape(fluid.layers.gather(clses, inds), [-1, num_dets, 1])
+
+    tl_scores = fluid.layers.reshape(tl_scores, [-1, 1])
+    tl_scores = fluid.layers.reshape(fluid.layers.gather(tl_scores, inds), [-1, num_dets, 1])
+    br_scores = fluid.layers.reshape(br_scores, [-1, 1])
+    br_scores = fluid.layers.reshape(fluid.layers.gather(br_scores, inds), [-1, num_dets, 1])
+
+    bboxes = fluid.layers.cast(bboxes, 'float32')
+    clses = fluid.layers.cast(clses, 'float32')
+    return bboxes, scores, tl_scores, br_scores, clses 
+
 @register
 class CornerHead(object):
     """
     """
     __shared__ = ['num_classes', 'stack']
 
-    def __init__(self, batch_size, num_classes=80, stack=2, pull_weight=0.1, push_weight=0.1):
-        self.batch_size = batch_size
+    def __init__(self, train_batch_size, num_classes=80, stack=2, pull_weight=0.1, push_weight=0.1, ae_threshold=1, num_dets=1000, top_k=100):
+        self.batch_size = train_batch_size
         self.num_classes = num_classes
         self.stack = stack
         self.pull_weight = pull_weight
         self.push_weight = push_weight
+        self.ae_threshold = ae_threshold
+        self.num_dets = num_dets
+        self.K = top_k
         self.tl_heats = []
         self.br_heats = []
         self.tl_tags = []
@@ -208,12 +286,6 @@ class CornerHead(object):
             loss -= focal_loss_
         return loss
 
-    def mask_feat(self, feat, ind):
-        feat_t = fluid.layers.transpose(feat, [0, 2, 3, 1])
-        H, W, C = feat_t.shape[1], feat_t.shape[2], feat_t.shape[3]
-        feat_r = fluid.layers.reshape(feat_t, [-1, C])
-        feat_g = fluid.layers.gather(feat_r, ind)
-        return fluid.layers.lod_reset(feat_g, ind)
 
     def ae_loss(self, tl_tag, br_tag, gt_num, expand_num):
         tag_mean = (tl_tag + br_tag) / 2
@@ -276,8 +348,8 @@ class CornerHead(object):
         push_loss = 0
 
         ones = fluid.layers.assign(np.array([1], dtype='float32'))
-        tl_tags = [self.mask_feat(tl_tag, gt_tl_ind) for tl_tag in self.tl_tags]
-        br_tags = [self.mask_feat(br_tag, gt_br_ind) for br_tag in self.br_tags]
+        tl_tags = [mask_feat(tl_tag, gt_tl_ind) for tl_tag in self.tl_tags]
+        br_tags = [mask_feat(br_tag, gt_br_ind) for br_tag in self.br_tags]
 
         pull_loss, push_loss = 0, 0
         expand_num = fluid.layers.sequence_expand(gt_num, gt_tl_ind)
@@ -287,8 +359,8 @@ class CornerHead(object):
             pull_loss += pull
             push_loss += push
 
-        tl_offs = [self.mask_feat(tl_off, gt_tl_ind) for tl_off in self.tl_offs]
-        br_offs = [self.mask_feat(br_off, gt_br_ind) for br_off in self.br_offs]
+        tl_offs = [mask_feat(tl_off, gt_tl_ind) for tl_off in self.tl_offs]
+        br_offs = [mask_feat(br_off, gt_br_ind) for br_off in self.br_offs]
 
         off_loss = 0
         for tl_off, br_off in zip(tl_offs, br_offs):
@@ -300,17 +372,17 @@ class CornerHead(object):
 
         loss = (focal_loss + pull_loss + push_loss + off_loss) / len(self.tl_heats)
         return {'loss':loss}
-    """
+
     def get_prediction(self, input):
         ind = self.stack - 1
         tl_modules = corner_pool(
-                cnv,
+                input,
                 256,
                 cornerpool_lib.top_pool,
                 cornerpool_lib.left_pool,
                 name='tl_modules_' + str(ind))
         br_modules = corner_pool(
-                cnv,
+                input,
                 256,
                 cornerpool_lib.bottom_pool,
                 cornerpool_lib.right_pool,
@@ -330,4 +402,21 @@ class CornerHead(object):
                 tl_modules, 2, name='tl_offs_' + str(ind))
         br_off = self.pred_mod(
                 br_modules, 2, name='br_offs_' + str(ind)) 
-    """
+        """
+        import cPickle as cp
+        tl_heat_np = cp.load(open('torch_tl_heat.pkl'))
+        tl_off_np = cp.load(open('torch_tl_off.pkl'))
+        tl_tag_np = cp.load(open('torch_tl_tag.pkl'))
+        br_heat_np = cp.load(open('torch_br_heat.pkl'))
+        br_off_np = cp.load(open('torch_br_off.pkl'))
+        br_tag_np = cp.load(open('torch_br_tag.pkl'))
+
+        tl_heat = fluid.layers.assign(tl_heat_np)
+        tl_off = fluid.layers.assign(tl_off_np)
+        tl_tag = fluid.layers.assign(tl_tag_np)
+        br_heat = fluid.layers.assign(br_heat_np)
+        br_off = fluid.layers.assign(br_off_np)
+        br_tag = fluid.layers.assign(br_tag_np)
+        """
+
+        return decode(tl_heat, br_heat, tl_tag, br_tag, tl_off, br_off, self.ae_threshold, self.num_dets, self.K)

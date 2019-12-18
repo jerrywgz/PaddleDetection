@@ -89,6 +89,11 @@ def main():
     reader = create_reader(eval_feed, args_path=FLAGS.dataset_dir)
     loader.set_sample_list_generator(reader, place)
 
+    build_strategy = fluid.BuildStrategy()
+    build_strategy.enable_sequential_execution = True
+    exec_strategy = fluid.ExecutionStrategy()
+    exec_strategy.num_iteration_per_drop_scope = 1
+
     # eval already exists json file
     if FLAGS.json_eval:
         logger.info(
@@ -100,13 +105,47 @@ def main():
         return
 
     compile_program = fluid.compiler.CompiledProgram(
-        eval_prog).with_data_parallel()
+        eval_prog).with_data_parallel(exec_strategy=exec_strategy, 
+        build_strategy=build_strategy)
 
     # load model
     exe.run(startup_prog)
     if 'weights' in cfg:
         checkpoint.load_params(exe, eval_prog, cfg.weights)
-    
+    """
+    import cPickle as cp
+    torch_param = cp.load(open('torch_param.pkl', 'rb'))
+    trans_torch_param = {}
+    for k, v in torch_param.items():
+        tn = k.replace(".", "_")[7:]
+        if 'pre' in tn:
+            if 'skip_1' in tn:
+                tn = tn[:14]+'bn'+tn[15:]
+            elif 'skip_0' in tn:
+                tn = tn[:14]+'conv'+tn[15:]
+        elif 'inters__' in tn:
+            if '0_0' in tn:
+                tn = tn[:13] + 'conv' + tn[14:]
+            elif '0_1' in tn:
+                tn = tn[:13] + 'bn' + tn[14:]
+        elif 'cnvs__' in tn:
+            if '0_0' in tn:
+                tn = tn[:11] + 'conv_weight'
+            elif '0_1' in tn:
+                tn = tn[:11] + 'bn' + tn[12:]
+        trans_torch_param[tn] = v
+    #param_list = ['hg_pre_0_conv_weight']
+    #for p in param_list:
+    #    print('init param: {}, value: {}'.format(p, trans_torch_param[p]))
+    param_name_list =eval_prog.block(0).all_parameters()
+    for p in param_name_list:
+         name = p.name
+         t = fluid.global_scope().find_var(name).get_tensor()
+         if name not in trans_torch_param.keys():
+             print('not exist: ', name)
+         else:
+             t.set(trans_torch_param[name], place)
+    """
     assert cfg.metric != 'OID', "eval process of OID dataset \
                           is not supported."
     if cfg.metric == "WIDERFACE":

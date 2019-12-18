@@ -401,8 +401,8 @@ class ArrangeTrainCornerNet(BaseOperator):
             context: a dict which contains additional info.
         Returns:
             sample: a tuple containing the following items:
-                (image, gt_bbox, gt_class, gt_score, is_crowd,
-                 im_info, gt_masks)
+                (image, gt_bbox, gt_class, tl_heatmaps, br_heatmaps,
+                tl_regrs, br_regrs, tl_tags, br_tags, tag_nums)
         """
         im = sample['image']
         im_id = sample['im_id']
@@ -419,3 +419,33 @@ class ArrangeTrainCornerNet(BaseOperator):
         outs = (im, im_id, gt_bbox, gt_class, tl_heatmaps, br_heatmaps,
                 tl_regrs, br_regrs, tl_tags, br_tags, tag_nums)
         return outs
+
+@register_op
+class ArrangeEvalCornerNet(BaseOperator):
+    """
+    Transform dict to the tuple format needed for evaluation.
+    """
+
+    def __init__(self):
+        super(ArrangeEvalCornerNet, self).__init__()
+
+    def __call__(self, sample, context=None):
+        """
+        Args:
+            sample: a dict which contains image
+                    info and annotation info.
+            context: a dict which contains additional info.
+        Returns:
+            sample: a tuple containing the following items:
+                (image, im_shape, im_id, gt_bbox, gt_class,
+                 difficult)
+        """
+        im = sample['image']
+        im_id = sample['im_id']
+        ratios = sample['ratios']
+        h = sample['h']
+        w = sample['w']
+        borders = sample['borders']
+        outs = (im, im_id, ratios, borders)
+        return outs
+

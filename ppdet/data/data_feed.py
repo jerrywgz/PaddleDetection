@@ -28,10 +28,11 @@ from ppdet.data.transform.operators import (
     DecodeImage, MixupImage, NormalizeBox, NormalizeImage, RandomDistort,
     RandomFlipImage, RandomInterpImage, ResizeImage, ExpandImage, CropImage,
     Permute, MultiscaleTestResize, Resize, ColorDistort, NormalizePermute,
-    RandomExpand, RandomCrop, CornerCrop, Lighting, CornerTarget)
+    RandomExpand, RandomCrop, CornerCrop, Lighting, CornerTarget, CornerRatio)
 from ppdet.data.transform.arrange_sample import (
     ArrangeRCNN, ArrangeEvalRCNN, ArrangeTestRCNN, ArrangeSSD, ArrangeEvalSSD,
-    ArrangeTestSSD, ArrangeYOLO, ArrangeEvalYOLO, ArrangeTestYOLO, ArrangeTrainCornerNet)
+    ArrangeTestSSD, ArrangeYOLO, ArrangeEvalYOLO, ArrangeTestYOLO, ArrangeTrainCornerNet,
+    ArrangeEvalCornerNet)
 
 __all__ = [
     'PadBatch', 'MultiScale', 'RandomShape', 'PadMSTest', 'DataSet',
@@ -39,7 +40,7 @@ __all__ = [
     'MaskRCNNTrainFeed', 'FasterRCNNEvalFeed', 'MaskRCNNEvalFeed',
     'FasterRCNNTestFeed', 'MaskRCNNTestFeed', 'SSDTrainFeed', 'SSDEvalFeed',
     'SSDTestFeed', 'YoloTrainFeed', 'YoloEvalFeed', 'YoloTestFeed',
-    'create_reader', 'CornerNetTrainFeed'
+    'create_reader', 'CornerNetTrainFeed', 'CornerNetEvalFeed', 'CornerNetTestFeed'
 ]
 
 
@@ -1084,7 +1085,7 @@ class CornerNetTrainFeed(DataFeed):
                  image_shape=[3, 511, 511],
                  sample_transforms=[
                      DecodeImage(to_rgb=False),
-                     CornerCrop(),
+                     CornerCrop(input_size=511),
                      Resize(target_dim=511),
                      RandomFlipImage(prob=0.5),
                      NormalizeImage(mean=[0.,0.,0.],
@@ -1099,8 +1100,8 @@ class CornerNetTrainFeed(DataFeed):
                               eigvec=[[-0.58752847, -0.69563484, 0.41340352],
                                       [-0.5832747, 0.00994535, -0.81221408],
                                       [-0.56089297, 0.71832671, 0.41158938]]),
-                     NormalizeImage(mean=[0.485, 0.456, 0.406],
-                                    std=[0.229, 0.224, 0.225],
+                     NormalizeImage(mean=[0.40789654, 0.44719302, 0.47026115],
+                                    std=[0.28863828, 0.27408164, 0.2780983],
                                     is_scale=False,
                                     is_channel_first=False),
                      Permute(to_bgr=False),
@@ -1139,5 +1140,104 @@ class CornerNetTrainFeed(DataFeed):
             clip_bbox=False)
         # XXX these modes should be unified
         self.mode = 'TRAIN'
+
+@register
+class CornerNetEvalFeed(DataFeed):
+    __doc__ = DataFeed.__doc__
+
+    def __init__(self,
+                 dataset=CocoDataSet(COCO_VAL_ANNOTATION,
+                                     COCO_VAL_IMAGE_DIR).__dict__,
+                 fields=['image', 'im_id', 'ratios', 'borders'],
+                 image_shape=[None, 3, None, None],
+                 sample_transforms=[
+                     DecodeImage(to_rgb=False),
+                     CornerCrop(is_train=False),
+                     CornerRatio(input_size=511, output_size=64),
+                     Permute(to_bgr=False),
+                     NormalizeImage(
+                         mean=[0.40789654, 0.44719302, 0.47026115],#[0.485, 0.456, 0.406],
+                         std=[0.28863828, 0.27408164, 0.2780983],#[0.229, 0.224, 0.225],
+                         is_scale=True,
+                         is_channel_first=True),
+                 ],
+                 batch_transforms=[],
+                 batch_size=1,
+                 shuffle=False,
+                 samples=-1,
+                 drop_last=False,
+                 with_background=False,
+                 num_workers=8,
+                 num_max_boxes=50,
+                 use_process=False,
+                 memsize=None):
+        sample_transforms.append(ArrangeEvalCornerNet())
+        super(CornerNetEvalFeed, self).__init__(
+            dataset,
+            fields,
+            image_shape,
+            sample_transforms,
+            batch_transforms,
+            batch_size=batch_size,
+            shuffle=shuffle,
+            samples=samples,
+            drop_last=drop_last,
+            with_background=with_background,
+            num_workers=num_workers,
+            use_process=use_process,
+            memsize=memsize)
+        self.num_max_boxes = num_max_boxes
+        self.mode = 'VAL'
+        self.bufsize = 128
+
+@register
+class CornerNetTestFeed(DataFeed):
+    __doc__ = DataFeed.__doc__
+
+    def __init__(self,
+                 dataset=SimpleDataSet(COCO_VAL_ANNOTATION,
+                                       COCO_VAL_IMAGE_DIR).__dict__,
+                 fields=['image', 'im_id', 'ratios', 'borders'],
+                 image_shape=[None, 3, None, None],
+                 sample_transforms=[
+                     DecodeImage(to_rgb=False),
+                     CornerCrop(is_train=False),
+                     CornerRatio(input_size=511, output_size=64),
+                     Permute(to_bgr=False),
+                     NormalizeImage(
+                         mean=[0.40789654, 0.44719302, 0.47026115],
+                         std=[0.28863828, 0.27408164, 0.2780983],
+                         is_scale=True,
+                         is_channel_first=True),
+                 ],
+                 batch_transforms=[],
+                 batch_size=1,
+                 shuffle=False,
+                 samples=-1,
+                 drop_last=False,
+                 with_background=False,
+                 num_workers=8,
+                 num_max_boxes=50,
+                 use_process=False,
+                 memsize=None):
+        sample_transforms.append(ArrangeEvalCornerNet())
+        if isinstance(dataset, dict):
+            dataset = SimpleDataSet(**dataset)
+        super(CornerNetTestFeed, self).__init__(
+            dataset,
+            fields,
+            image_shape,
+            sample_transforms,
+            batch_transforms,
+            batch_size=batch_size,
+            shuffle=shuffle,
+            samples=samples,
+            drop_last=drop_last,
+            with_background=with_background,
+            num_workers=num_workers,
+            use_process=use_process,
+            memsize=memsize)
+        self.mode = 'TEST'
+        self.bufsize = 128
 
 # yapf: enable

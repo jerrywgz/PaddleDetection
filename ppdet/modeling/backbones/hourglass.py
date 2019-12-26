@@ -18,6 +18,7 @@ from __future__ import print_function
 
 from paddle import fluid
 from paddle.fluid.param_attr import ParamAttr
+from paddle.fluid.initializer import Uniform
 
 import functools
 from ppdet.core.workspace import register
@@ -25,6 +26,10 @@ from .resnet import ResNet
 
 __all__ = ['Hourglass']
 
+def kaiming_init(input, filter_size):
+    fan_in = input.shape[1]
+    std = (1.0 / (fan_in * filter_size * filter_size)) ** 0.5
+    return Uniform(0.-std, std)
 
 def _conv_norm(x,
                k,
@@ -44,8 +49,10 @@ def _conv_norm(x,
         num_filters=out_dim,
         stride=stride,
         padding=pad,
-        param_attr=ParamAttr(name=name + conv_name + "_weight"),
-        bias_attr=ParamAttr(name=name + conv_name + "_bias") if not with_bn else False,
+        param_attr=ParamAttr(name=name + conv_name + "_weight",
+                             initializer=kaiming_init(x, k)),
+        bias_attr=ParamAttr(name=name + conv_name + "_bias",
+                            initializer=kaiming_init(x, k)) if not with_bn else False,
         name=name + '_output')
     if with_bn:
         pattr = ParamAttr(name=name + bn_name + '_weight')
@@ -82,7 +89,8 @@ def fire_block(x, out_dim, sr=2, stride=1, name=None):
         filter_size=1,
         num_filters=out_dim // 2,
         stride=stride,
-        param_attr=ParamAttr(name=name + "_conv_1x1_weight"),
+        param_attr=ParamAttr(name=name + "_conv_1x1_weight",
+                             initializer=kaiming_init(conv1, 1)),
         bias_attr=False,
         name=name + '_conv_1x1')
     conv_3x3 = fluid.layers.conv2d(
@@ -92,7 +100,8 @@ def fire_block(x, out_dim, sr=2, stride=1, name=None):
         stride=stride,
         padding=1,
         groups=out_dim // sr,
-        param_attr=ParamAttr(name=name + "_conv_3x3_weight"),
+        param_attr=ParamAttr(name=name + "_conv_3x3_weight",
+                             initializer=kaiming_init(conv1, 3)),
         bias_attr=False,
         name=name + '_conv_3x3',
         use_cudnn=False)
@@ -136,8 +145,10 @@ def make_fire_layer_revr(x, in_dim, out_dim, modules, name=None):
 
 
 def make_unpool_layer(x, dim, name=None):
-    pattr = ParamAttr(name=name + '_weight')
-    battr = ParamAttr(name=name + '_bias')
+    pattr = ParamAttr(name=name + '_weight', 
+                      initializer=kaiming_init(x, dim))
+    battr = ParamAttr(name=name + '_bias',
+                      initializer=kaiming_init(x, dim))
     layer = fluid.layers.conv2d_transpose(
         input=x,
         num_filters=dim,

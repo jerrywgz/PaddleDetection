@@ -20,7 +20,7 @@ from paddle import fluid
 from paddle.fluid.param_attr import ParamAttr
 from paddle.fluid.initializer import Constant
 
-from .backbones.hourglass import _conv_norm
+from .backbones.hourglass import _conv_norm, kaiming_init
 from ppdet.core.workspace import register
 import cornerpool_lib
 import numpy as np
@@ -39,7 +39,8 @@ def corner_pool(x, dim, pool1, pool2, name=None):
         filter_size=3, 
         num_filters=dim, 
         padding=1, 
-        param_attr=ParamAttr(name=name + "_p_conv1_weight"), 
+        param_attr=ParamAttr(name=name + "_p_conv1_weight",
+                             initializer=kaiming_init(pool1 + pool2, 3)), 
         bias_attr=False,
         name=name + '_p_conv1')
     p_bn1 = fluid.layers.batch_norm(
@@ -53,7 +54,8 @@ def corner_pool(x, dim, pool1, pool2, name=None):
         x, 
         filter_size=1, 
         num_filters=dim, 
-        param_attr=ParamAttr(name=name + "_conv1_weight"), 
+        param_attr=ParamAttr(name=name + "_conv1_weight",
+                             initializer=kaiming_init(x, 1)), 
         bias_attr=False,
         name=name + '_conv1')
     bn1 = fluid.layers.batch_norm(
@@ -200,7 +202,8 @@ class CornerHead(object):
             input=conv0,
             filter_size=1,
             num_filters=dim,
-            param_attr=ParamAttr(name=name + "_1_weight"),
+            param_attr=ParamAttr(name=name + "_1_weight",
+                                 initializer=kaiming_init(conv0, 1)),
             bias_attr=ParamAttr(
                 name=name + "_1_bias", initializer=Constant(-2.19)),
             name=name + '_1')
@@ -404,12 +407,12 @@ class CornerHead(object):
                 br_modules, 2, name='br_offs_' + str(ind)) 
         """
         import cPickle as cp
-        tl_heat_np = cp.load(open('torch_tl_heat.pkl'))
-        tl_off_np = cp.load(open('torch_tl_off.pkl'))
-        tl_tag_np = cp.load(open('torch_tl_tag.pkl'))
-        br_heat_np = cp.load(open('torch_br_heat.pkl'))
-        br_off_np = cp.load(open('torch_br_off.pkl'))
-        br_tag_np = cp.load(open('torch_br_tag.pkl'))
+        tl_heat_np = cp.load(open('torch_data/torch_tl_heat.pkl'))
+        tl_off_np = cp.load(open('torch_data/torch_tl_off.pkl'))
+        tl_tag_np = cp.load(open('torch_data/torch_tl_tag.pkl'))
+        br_heat_np = cp.load(open('torch_data/torch_br_heat.pkl'))
+        br_off_np = cp.load(open('torch_data/torch_br_off.pkl'))
+        br_tag_np = cp.load(open('torch_data/torch_br_tag.pkl'))
 
         tl_heat = fluid.layers.assign(tl_heat_np)
         tl_off = fluid.layers.assign(tl_off_np)

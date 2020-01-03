@@ -171,6 +171,7 @@ class Hourglass(object):
 
     def __call__(self, input, name='hg'):
         inter = self.pre(input, name + '_pre')
+        print('inter: ', inter)
         cnvs = []
         for ind in range(self.stack):
             hg = self.hg_module(inter, name=name + '_hgs_' + str(ind))
@@ -185,6 +186,7 @@ class Hourglass(object):
                 inter = fluid.layers.relu(inter)
                 inter = residual_block(
                     inter, 256, name=name + '_inters_' + str(ind))
+        print('cnvs[-1]: ', cnvs[-1])
         return cnvs
 
     def pre(self, x, name=None):

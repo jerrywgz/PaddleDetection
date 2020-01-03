@@ -102,6 +102,9 @@ class Reader(object):
             n = 0
             while True:
                 for _batch in batched_ds:
+                    print('_batch: ', _batch[0][1])
+                    if _batch[0][1] == [139]:
+                        _batch = [_batch[1], _batch[0]]
                     yield _batch
                     n += 1
                     if maxit > 0 and n == maxit:

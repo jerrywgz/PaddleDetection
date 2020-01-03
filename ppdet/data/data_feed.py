@@ -1087,7 +1087,7 @@ class CornerNetTrainFeed(DataFeed):
                      DecodeImage(to_rgb=False),
                      CornerCrop(input_size=511),
                      Resize(target_dim=511),
-                     RandomFlipImage(prob=0.5),
+                     #RandomFlipImage(prob=0.5),
                      NormalizeImage(mean=[0.,0.,0.],
                                     std=[1.,1.,1.],
                                     is_scale=True,

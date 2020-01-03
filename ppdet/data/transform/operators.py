@@ -1095,12 +1095,11 @@ class ColorDistort(BaseOperator):
         img = np.dot(img, t)
         return img
 
-    def apply_saturation(self, img):
+    def apply_saturation(self, img, img_gray):
         if self.corner_jitter:
             alpha = 1. + np.random.uniform(
                 low=-self.saturation, high=self.saturation)
-            self._blend(alpha, img,
-                        cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)[:, :, None])
+            self._blend(alpha, img, img_gray[:, :, None])
             return img
         low, high, prob = self.saturation
         if np.random.uniform(0., 1.) < prob:
@@ -1115,11 +1114,11 @@ class ColorDistort(BaseOperator):
         img += gray
         return img
 
-    def apply_contrast(self, img):
+    def apply_contrast(self, img, img_gray):
         if self.corner_jitter:
             alpha = 1. + np.random.uniform(
                 low=-self.contrast, high=self.contrast)
-            img_mean = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY).mean()
+            img_mean = img_gray.mean()
             self._blend(alpha, img, img_mean)
             return img
         low, high, prob = self.contrast
@@ -1131,7 +1130,7 @@ class ColorDistort(BaseOperator):
         img *= delta
         return img
 
-    def apply_brightness(self, img):
+    def apply_brightness(self, img, img_gray):
         if self.corner_jitter:
             alpha = 1 + np.random.uniform(
                 low=-self.brightness, high=self.brightness)
@@ -1153,6 +1152,7 @@ class ColorDistort(BaseOperator):
 
     def __call__(self, sample, context=None):
         img = sample['image']
+        img_mean = None
         if self.random_apply:
             functions = [
                 self.apply_brightness, self.apply_contrast,
@@ -1160,9 +1160,11 @@ class ColorDistort(BaseOperator):
             ]
             if not self.corner_jitter:
                 functions.append(self.apply_hue)
+            else:
+                img_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             distortions = np.random.permutation(functions)
             for func in distortions:
-                img = func(img)
+                img = func(img, img_gray)
             sample['image'] = img
             return sample
 
@@ -1523,7 +1525,7 @@ class CornerCrop(BaseOperator):
             height = im_h | 127
             width = im_w | 127
 
-        cropped_image = np.zeros((height, width, 3), dtype=np.float32)
+        cropped_image = np.zeros((height, width, 3), dtype=sample['image'].dtype)
 
         x0, x1 = max(ctx - width // 2, 0), min(ctx + width // 2, im_w)
         y0, y1 = max(cty - height // 2, 0), min(cty + height // 2, im_h)
@@ -1542,12 +1544,12 @@ class CornerCrop(BaseOperator):
 
         if self.is_train:
             # crop detections
-            gt_bbox = sample['gt_bbox'].copy()
+            gt_bbox = sample['gt_bbox']
             gt_bbox[:, 0:4:2] -= x0
             gt_bbox[:, 1:4:2] -= y0
             gt_bbox[:, 0:4:2] += cropped_ctx - left_w
             gt_bbox[:, 1:4:2] += cropped_cty - top_h
-            sample['gt_bbox'] = gt_bbox.copy()
+            sample['gt_bbox'] = gt_bbox
         else:
             sample['borders'] = np.array([
                 cropped_cty - top_h,

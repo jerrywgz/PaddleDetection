@@ -1095,12 +1095,11 @@ class ColorDistort(BaseOperator):
         img = np.dot(img, t)
         return img
 
-    def apply_saturation(self, img):
+    def apply_saturation(self, img, img_gray=None):
         if self.corner_jitter:
             alpha = 1. + np.random.uniform(
                 low=-self.saturation, high=self.saturation)
-            self._blend(alpha, img,
-                        cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)[:, :, None])
+            self._blend(alpha, img, img_gray[:, :, None])
             return img
         low, high, prob = self.saturation
         if np.random.uniform(0., 1.) < prob:
@@ -1115,12 +1114,12 @@ class ColorDistort(BaseOperator):
         img += gray
         return img
 
-    def apply_contrast(self, img):
+    def apply_contrast(self, img, img_gray=None):
         if self.corner_jitter:
             alpha = 1. + np.random.uniform(
                 low=-self.contrast, high=self.contrast)
-            img_mean = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY).mean()
-            self._blend(alpha, img, img_mean)
+            img_mean = img_gray.mean()
+            img = self._blend(alpha, img, img_mean)
             return img
         low, high, prob = self.contrast
         if np.random.uniform(0., 1.) < prob:
@@ -1131,7 +1130,7 @@ class ColorDistort(BaseOperator):
         img *= delta
         return img
 
-    def apply_brightness(self, img):
+    def apply_brightness(self, img, img_gray=None):
         if self.corner_jitter:
             alpha = 1 + np.random.uniform(
                 low=-self.brightness, high=self.brightness)
@@ -1160,9 +1159,11 @@ class ColorDistort(BaseOperator):
             ]
             if not self.corner_jitter:
                 functions.append(self.apply_hue)
+            else:
+                img_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             distortions = np.random.permutation(functions)
             for func in distortions:
-                img = func(img)
+                img = func(img, img_gray)
             sample['image'] = img
             return sample
 

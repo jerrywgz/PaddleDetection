@@ -202,7 +202,10 @@ def main():
                      'reduce_sum_3.tmp_0@GRAD', 'reduce_sum_4.tmp_0@GRAD', 'elementwise_min_0@GRAD', 'elementwise_min_0',
                      'hg_pre_1_add.tmp_0', 'hg_pre_1_conv1_weight']
     """
-    name_list = ['image', 'hg_pre_2_add.tmp_0', 'hg_cnvs_1_bn_output.tmp_3']
+    name_list = ['image', 'hg_pre_2_add.tmp_0', 'hg_cnvs_0_bn_output.tmp_3', 'hg_cnvs_1_bn_output.tmp_3',
+                 'hg_hgs_0_up1_1_add_relu.tmp_0', 'hg_hgs_0_low1_1_add_relu.tmp_0', 'hg_hgs_0_low2_merg',
+                 'conv2d_transpose_3.tmp_1', 'hg_hgs_0_low2_low2_low2_up1_1_add_relu.tmp_0',
+                 'hg_hgs_0_low2_low2_low2_low1_1_add_relu.tmp_0', 'hg_hgs_0_low2_low2_low2_low2_3_add_relu.tmp_0']
     for name in name_list:
         fluid.framework._get_var(name, train_prog).persistable = True 
 

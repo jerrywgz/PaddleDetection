@@ -174,7 +174,7 @@ class Hourglass(object):
         print('inter: ', inter)
         cnvs = []
         for ind in range(self.stack):
-            hg = self.hg_module(inter, name=name + '_hgs_' + str(ind))
+            hg = self.hg_module(inter, name=name + '_hgs_' + str(ind), debug=(ind==0))
             cnv = _conv_norm(
                 hg, 3, 256, act='relu', pad=1, name=name + '_cnvs_' + str(ind))
             cnvs.append(cnv)
@@ -186,6 +186,7 @@ class Hourglass(object):
                 inter = fluid.layers.relu(inter)
                 inter = residual_block(
                     inter, 256, name=name + '_inters_' + str(ind))
+        print('cnvs[0]: ', cnvs[0])
         print('cnvs[-1]: ', cnvs[-1])
         return cnvs
 
@@ -205,15 +206,20 @@ class Hourglass(object):
                   make_low_layer=make_fire_layer,
                   make_hg_layer_revr=make_fire_layer_revr,
                   make_unpool_layer=make_unpool_layer,
-                  name=None):
+                  name=None,
+                  debug=False):
         curr_mod = modules[0]
         next_mod = modules[1]
         curr_dim = dims[0]
         next_dim = dims[1]
         up1 = make_up_layer(x, curr_dim, curr_dim, curr_mod, name=name + '_up1')
+        if n == 1:
+            print('up1_1: ', up1)
         max1 = x
         low1 = make_hg_layer(
             max1, curr_dim, next_dim, curr_mod, name=name + '_low1')
+        if n == 1:
+            print('low1_1: ', low1)
         low2 = self.hg_module(
             low1,
             n - 1,
@@ -226,9 +232,13 @@ class Hourglass(object):
             make_unpool_layer=make_unpool_layer,
             name=name + '_low2') if n > 1 else make_low_layer(
                 low1, next_dim, next_dim, next_mod, name=name + '_low2')
+        if n == 1:
+            print('low2_1: ', low2)
         low3 = make_hg_layer_revr(
             low2, next_dim, curr_dim, curr_mod, name=name + '_low3')
         up2 = make_unpool_layer(low3, curr_dim, name=name + '_up2')
+        if n == 1:
+            print('up2_1: ', up2)
         merg = fluid.layers.elementwise_add(x=up1, y=up2, name=name + '_merg')
         return merg
 

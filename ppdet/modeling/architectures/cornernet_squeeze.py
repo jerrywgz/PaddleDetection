@@ -92,10 +92,23 @@ class CornerNetSqueeze(object):
             detections = detections[0]
 
             keep_inds = fluid.layers.squeeze(fluid.layers.where(scores > -1), axes=[-1])
-            detections = fluid.layers.gather(detections, keep_inds)
-            debug_box = detections[:, :4]
-
-            total_res = self.nms(detections[:,:4], detections[:,4], detections[:,-1])
+            inds_shape = fluid.layers.shape(keep_inds)
+            inds_size = fluid.layers.reduce_prod(inds_shape)
+            size = fluid.layers.fill_constant([1], value=1, dtype='int32')
+            cond = inds_size < size
+            total_res = fluid.layers.create_global_var(
+                shape=[1],
+                value=0.0,
+                dtype='float32',
+                persistable=False,
+                name='total_res')
+            with fluid.layers.control_flow.Switch() as switch:
+                with switch.case(cond):
+                    fluid.layers.assign(input=np.array([]).astype('float32'), output=total_res)
+                with switch.default():
+                    detections = fluid.layers.gather(detections, keep_inds)
+                    total_out = self.nms(detections[:,:4], detections[:,4], detections[:,-1])
+                    fluid.layers.assign(input=total_out, output=total_res)
             
             return {'bbox': total_res}
 

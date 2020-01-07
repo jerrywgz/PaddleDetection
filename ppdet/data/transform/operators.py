@@ -1119,7 +1119,7 @@ class ColorDistort(BaseOperator):
             alpha = 1. + np.random.uniform(
                 low=-self.contrast, high=self.contrast)
             img_mean = img_gray.mean()
-            img = self._blend(alpha, img, img_mean)
+            self._blend(alpha, img, img_mean)
             return img
         low, high, prob = self.contrast
         if np.random.uniform(0., 1.) < prob:
@@ -1439,6 +1439,12 @@ class CornerTarget(BaseOperator):
         tag_lens = 0
         gt_bbox = sample['gt_bbox']
         gt_class = sample['gt_class']
+        keep_inds  = ((gt_bbox[:, 2] - gt_bbox[:, 0]) > 0) & \
+                ((gt_bbox[:, 3] - gt_bbox[:, 1]) > 0)
+        gt_bbox = gt_bbox[keep_inds].copy()
+        gt_class = gt_class[keep_inds].copy()
+        sample['gt_bbox'] = gt_bbox
+        sample['gt_class'] = gt_class
         width_ratio = self.output_size[1] / sample['w']
         height_ratio = self.output_size[0] / sample['h']
         for i in range(gt_bbox.shape[0]):

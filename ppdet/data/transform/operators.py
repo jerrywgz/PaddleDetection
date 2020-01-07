@@ -1095,7 +1095,7 @@ class ColorDistort(BaseOperator):
         img = np.dot(img, t)
         return img
 
-    def apply_saturation(self, img, img_gray):
+    def apply_saturation(self, img, img_gray=None):
         if self.corner_jitter:
             alpha = 1. + np.random.uniform(
                 low=-self.saturation, high=self.saturation)
@@ -1114,7 +1114,7 @@ class ColorDistort(BaseOperator):
         img += gray
         return img
 
-    def apply_contrast(self, img, img_gray):
+    def apply_contrast(self, img, img_gray=None):
         if self.corner_jitter:
             alpha = 1. + np.random.uniform(
                 low=-self.contrast, high=self.contrast)
@@ -1130,7 +1130,7 @@ class ColorDistort(BaseOperator):
         img *= delta
         return img
 
-    def apply_brightness(self, img, img_gray):
+    def apply_brightness(self, img, img_gray=None):
         if self.corner_jitter:
             alpha = 1 + np.random.uniform(
                 low=-self.brightness, high=self.brightness)
@@ -1440,6 +1440,12 @@ class CornerTarget(BaseOperator):
         tag_lens = 0
         gt_bbox = sample['gt_bbox']
         gt_class = sample['gt_class']
+        keep_inds  = ((gt_bbox[:, 2] - gt_bbox[:, 0]) > 0) & \
+                ((gt_bbox[:, 3] - gt_bbox[:, 1]) > 0)
+        gt_bbox = gt_bbox[keep_inds].copy()
+        gt_class = gt_class[keep_inds].copy()
+        sample['gt_bbox'] = gt_bbox
+        sample['gt_class'] = gt_class
         width_ratio = self.output_size[1] / sample['w']
         height_ratio = self.output_size[0] / sample['h']
         for i in range(gt_bbox.shape[0]):

@@ -163,6 +163,12 @@ def create_feed(feed, iterable=False, sub_prog_feed=False):
                 'shape': [1],
                 'dtype': 'int32',
                 'lod_level': 0
+            },
+            {
+                'name': 'target_weight',
+                'shape': [1],
+                'dtype': 'float32',
+                'lod_level': 0
             }]
             for target in corner_target_var:
                 feed_var_map[target['name']] = target

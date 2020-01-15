@@ -1436,6 +1436,7 @@ class CornerTarget(BaseOperator):
         br_regrs = []
         tl_tags = []
         br_tags = []
+        target_weight = np.array([1], dtype=np.float32)
         tag_nums = np.zeros((1), dtype=np.int32)
         tag_lens = 0
         gt_bbox = sample['gt_bbox']
@@ -1484,6 +1485,13 @@ class CornerTarget(BaseOperator):
             tl_tags.append(ytl * self.output_size[1] + xtl)
             br_tags.append(ybr * self.output_size[1] + xbr)
 
+        if tag_lens == 0:
+            tl_regrs.append([0, 0])
+            br_regrs.append([0, 0])
+            tl_tags.append(0)
+            br_tags.append(0)
+            target_weight[0] = 0.
+            tag_lens = 1
         tag_nums[0] = np.array(tag_lens, dtype=np.int32)
 
         sample['tl_heatmaps'] = tl_heatmaps
@@ -1493,6 +1501,7 @@ class CornerTarget(BaseOperator):
         sample['tl_tags'] = np.array(tl_tags).astype('int64')
         sample['br_tags'] = np.array(br_tags).astype('int64')
         sample['tag_nums'] = tag_nums
+        sample['target_weight'] = target_weight
 
         return sample
 

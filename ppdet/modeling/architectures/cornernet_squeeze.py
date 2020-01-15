@@ -75,7 +75,7 @@ class CornerNetSqueeze(object):
         if mode == 'train':
             target_vars = [
                 'tl_heatmaps', 'br_heatmaps', 'tag_nums', 'tl_regrs', 'br_regrs',
-                'tl_tags', 'br_tags'
+                'tl_tags', 'br_tags', 'target_weight'
             ]
             target = {key: feed_vars[key] for key in target_vars}
             self.corner_head.get_output(body_feats)

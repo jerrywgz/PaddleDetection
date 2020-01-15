@@ -1080,7 +1080,8 @@ class CornerNetTrainFeed(DataFeed):
                  fields=[
                      'image', 'im_id', 'gt_box', 'gt_label',
                      'tl_heatmaps', 'br_heatmaps', 'tl_regrs',
-                     'br_regrs', 'tl_tags', 'br_tags', 'tag_nums'
+                     'br_regrs', 'tl_tags', 'br_tags', 'tag_nums',
+                     'target_weight',
                  ],
                  image_shape=[3, 511, 511],
                  sample_transforms=[

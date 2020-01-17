@@ -348,6 +348,7 @@ class Reader(object):
 
             batch.append(sample)
             bs += 1
+        batch = batch[::-1]
         return batch
 
     def worker(self, drop_empty=True, batch_samples=None):

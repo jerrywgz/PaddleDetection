@@ -468,6 +468,7 @@ class NormalizeImage(BaseOperator):
         """
         samples = sample
         batch_input = True
+        print('image before normalize: ', sample['im_file'], sample['image'])
         if not isinstance(samples, Sequence):
             batch_input = False
             samples = [samples]
@@ -490,6 +491,7 @@ class NormalizeImage(BaseOperator):
                     sample[k] = im
         if not batch_input:
             samples = samples[0]
+        print('image after normalize: ', sample['im_file'], sample['image'])
         return samples
 
 
@@ -1063,6 +1065,7 @@ class Resize(BaseOperator):
         w = sample['w']
         h = sample['h']
 
+        print('detections before resize: ', sample['im_file'], sample['gt_bbox'], sample['image'])
         interp = self.interp
         if interp == 'random':
             interp = np.random.choice(range(5))
@@ -1083,6 +1086,8 @@ class Resize(BaseOperator):
 
         sample['image'] = cv2.resize(
             sample['image'], (resize_w, resize_h), interpolation=interp)
+
+        print('detections after resize: ', sample['im_file'], sample['gt_bbox'])
         return sample
 
 
@@ -1140,8 +1145,9 @@ class ColorDistort(BaseOperator):
 
     def apply_saturation(self, img, img_gray=None):
         if self.corner_jitter:
-            alpha = 1. + np.random.uniform(
-                low=-self.saturation, high=self.saturation)
+            #alpha = 1. + np.random.uniform(
+            #    low=-self.saturation, high=self.saturation)
+            alpha = 1.
             self._blend(alpha, img, img_gray[:, :, None])
             return img
         low, high, prob = self.saturation
@@ -1159,8 +1165,9 @@ class ColorDistort(BaseOperator):
 
     def apply_contrast(self, img, img_gray=None):
         if self.corner_jitter:
-            alpha = 1. + np.random.uniform(
-                low=-self.contrast, high=self.contrast)
+            #alpha = 1. + np.random.uniform(
+            #    low=-self.contrast, high=self.contrast)
+            alpha = 1.
             img_mean = img_gray.mean()
             self._blend(alpha, img, img_mean)
             return img
@@ -1175,8 +1182,9 @@ class ColorDistort(BaseOperator):
 
     def apply_brightness(self, img, img_gray=None):
         if self.corner_jitter:
-            alpha = 1 + np.random.uniform(
-                low=-self.brightness, high=self.brightness)
+            #alpha = 1 + np.random.uniform(
+            #    low=-self.brightness, high=self.brightness)
+            alpha = 1.
             img *= alpha
             return img
         low, high, prob = self.brightness
@@ -1207,10 +1215,12 @@ class ColorDistort(BaseOperator):
                 img = img.astype(np.float32, copy=False)
                 img /= 255.
                 img_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-            distortions = np.random.permutation(functions)
+            #distortions = np.random.permutation(functions)
+            distortions = functions
             for func in distortions:
                 img = func(img, img_gray)
             sample['image'] = img
+            print('image after colordistort: ', sample['im_file'], sample['image'])
             return sample
 
         img = self.apply_brightness(img)
@@ -1507,7 +1517,8 @@ class Lighting(BaseOperator):
 
     def __call__(self, sample, context=None):
         """"""
-        alpha = np.random.normal(scale=self.alphastd, size=(3, ))
+        #alpha = np.random.normal(scale=self.alphastd, size=(3, ))
+        alpha = [1., 1., 1.]
         sample['image'] += np.dot(self.eigvec, self.eigval * alpha)
         return sample
 
@@ -1519,7 +1530,8 @@ class CornerTarget(BaseOperator):
                  num_classes,
                  gaussian_bump=True,
                  gaussian_rad=-1,
-                 gaussian_iou=0.3):
+                 gaussian_iou=0.3,
+                 max_tag_len=128):
         """
         """
         super(CornerTarget, self).__init__()
@@ -1528,6 +1540,7 @@ class CornerTarget(BaseOperator):
         self.gaussian_bump = gaussian_bump
         self.gaussian_rad = gaussian_rad
         self.gaussian_iou = gaussian_iou
+        self.max_tag_len = max_tag_len
 
     def __call__(self, sample, context=None):
         """ """
@@ -1537,15 +1550,14 @@ class CornerTarget(BaseOperator):
         br_heatmaps = np.zeros(
             (self.num_classes, self.output_size[0], self.output_size[1]),
             dtype=np.float32)
+        tl_regrs    = np.zeros((self.max_tag_len, 2), dtype=np.float32)
+        br_regrs    = np.zeros((self.max_tag_len, 2), dtype=np.float32)
+        tl_tags     = np.zeros((self.max_tag_len), dtype=np.int64)
+        br_tags     = np.zeros((self.max_tag_len), dtype=np.int64)
+        tag_masks   = np.zeros((self.max_tag_len), dtype=np.uint8)
+        tag_lens    = np.zeros((), dtype=np.int32)
 
-        tl_regrs = []
-        br_regrs = []
-        tl_tags = []
-        br_tags = []
         tag_nums = np.zeros((1), dtype=np.int32)
-        target_weight = np.zeros((1), dtype=np.float32)
-        tag_lens = 0
-        has_bbox = 1 
         gt_bbox = sample['gt_bbox']
         gt_class = sample['gt_class']
         keep_inds  = ((gt_bbox[:, 2] - gt_bbox[:, 0]) > 0) & \
@@ -1556,6 +1568,7 @@ class CornerTarget(BaseOperator):
         sample['gt_class'] = gt_class
         width_ratio = self.output_size[1] / sample['w']
         height_ratio = self.output_size[0] / sample['h']
+        print('detections before target: ', sample['im_file'], sample['image'])
         for i in range(gt_bbox.shape[0]):
             width = gt_bbox[i][2] - gt_bbox[i][0]
             height = gt_bbox[i][3] - gt_bbox[i][1]
@@ -1586,31 +1599,23 @@ class CornerTarget(BaseOperator):
                 tl_heatmaps[gt_class[i][0], ytl, xtl] = 1
                 br_heatmaps[gt_class[i][0], ybr, xbr] = 1
 
+            tl_regrs[i, :] = [fxtl - xtl, fytl - ytl]
+            br_regrs[i, :] = [fxbr - xbr, fybr - ybr]
+            tl_tags[tag_lens] = ytl * self.output_size[1] + xtl
+            br_tags[tag_lens] = ybr * self.output_size[1] + xbr
             tag_lens += 1
-            tl_regrs.append([fxtl - xtl, fytl - ytl])
-            br_regrs.append([fxbr - xbr, fybr - ybr])
-            tl_tags.append(ytl * self.output_size[1] + xtl)
-            br_tags.append(ybr * self.output_size[1] + xbr)
-        if tag_lens == 0:
-            tl_regrs.append([0, 0])
-            br_regrs.append([0, 0])
-            tl_tags.append(0)
-            br_tags.append(0)
-            has_bbox = 0
-            tag_lens = 1
 
-        tag_nums[0] = np.array(tag_lens, dtype=np.int32)
-        target_weight[0] = np.array(has_bbox, dtype=np.float32)
+        tag_masks[:tag_lens] = 1
 
         sample['tl_heatmaps'] = tl_heatmaps
         sample['br_heatmaps'] = br_heatmaps
-        sample['tl_regrs'] = np.array(tl_regrs).astype('float32')
-        sample['br_regrs'] = np.array(br_regrs).astype('float32')
-        sample['tl_tags'] = np.array(tl_tags).astype('int64')
-        sample['br_tags'] = np.array(br_tags).astype('int64')
-        sample['tag_nums'] = tag_nums
-        sample['target_weight'] = target_weight
+        sample['tl_regrs'] = tl_regrs
+        sample['br_regrs'] = br_regrs
+        sample['tl_tags'] = tl_tags
+        sample['br_tags'] = br_tags
+        sample['tag_masks'] = tag_masks
 
+        print('target: ', sample['im_file'], tag_lens, tl_heatmaps, br_heatmaps, tl_regrs, br_regrs, tl_tags, br_tags)
         return sample
 
 
@@ -1632,18 +1637,23 @@ class CornerCrop(BaseOperator):
     def __call__(self, sample, context=None):
         """"""
         im_h, im_w = int(sample['h']), int(sample['w'])
+        print('detections before random crop: ', sample['im_file'], sample['gt_bbox'], sample['image'])
+        print('random crop: ', self.input_size, self.border)
         if self.is_train:
-            scale = np.random.choice(self.random_scales)
+            #scale = np.random.choice(self.random_scales)
+            scale = 1. 
             height = int(self.input_size * scale)
             width = int(self.input_size * scale)
 
             w_border = self._get_border(self.border, sample['w'])
             h_border = self._get_border(self.border, sample['h'])
 
-            ctx = np.random.randint(
-                low=w_border, high=sample['w'] - w_border)
-            cty = np.random.randint(
-                low=h_border, high=sample['h'] - h_border)
+            #ctx = np.random.randint(
+            #    low=w_border, high=sample['w'] - w_border)
+            #cty = np.random.randint(
+            #    low=h_border, high=sample['h'] - h_border)
+            ctx = w_border + 1
+            cty = h_border + 1
 
         else:
             cty, ctx = im_h // 2, im_w // 2
@@ -1666,7 +1676,7 @@ class CornerCrop(BaseOperator):
         y_slice = slice(
             int(cropped_cty - top_h), int(cropped_cty + bottom_h))
         cropped_image[y_slice, x_slice, :] = sample['image'][y0:y1, x0:
-                                                             x1, :].copy()
+                                                             x1, :]
 
         sample['image'] = cropped_image
         sample['h'], sample['w'] = height, width
@@ -1678,6 +1688,7 @@ class CornerCrop(BaseOperator):
             gt_bbox[:, 1:4:2] -= y0
             gt_bbox[:, 0:4:2] += cropped_ctx - left_w
             gt_bbox[:, 1:4:2] += cropped_cty - top_h
+            sample['gt_bbox'] = gt_bbox
         else:
             sample['borders'] = np.array(
                 [

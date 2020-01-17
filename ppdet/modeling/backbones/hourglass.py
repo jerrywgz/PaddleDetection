@@ -192,6 +192,7 @@ class Hourglass(object):
                 inter = fluid.layers.relu(inter)
                 inter = residual_block(
                     inter, 256, name=name + '_inters_' + str(ind))
+        print('cnvs[0]: ', cnvs[0])
         return cnvs
 
     def pre(self, x, name=None):

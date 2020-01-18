@@ -57,6 +57,9 @@ def _conv_norm(x,
             name=name + conv_name + "_bias", initializer=kaiming_init(x, k))
         if not with_bn else False,
         name=name + '_output')
+    if name == 'br_modules_0_conv2':
+        print('self.pool_conv: filter_size: {}, num_filters: {}, stride: {}, padding: {}, with_bn: {}'.format(k, out_dim, stride, pad, with_bn) )
+        print('pool conv: ', conv)
     if with_bn:
         pattr = ParamAttr(name=name + bn_name + '_weight')
         battr = ParamAttr(name=name + bn_name + '_bias')

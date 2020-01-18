@@ -39,6 +39,7 @@ LearningRate:
     milestones:
     - 450000
 
+
 OptimizerBuilder:
   optimizer:
     type: Adam
@@ -53,8 +54,8 @@ TrainReader:
     output_size: 64 
   dataset:
     !COCODataSet
-    image_dir: val2017
-    anno_path: annotations/instances_val2017.json
+    image_dir: train2017
+    anno_path: annotations/instances_train2017.json
     dataset_dir:  /paddle/wangguanzhong/data/coco 
     with_background: false
   sample_transforms:
@@ -86,8 +87,6 @@ TrainReader:
   - !CornerTarget
     output_size: [64, 64]
     num_classes: 80
-  #batch_transforms:
-  #- !CornerBatchTarget {}
   batch_size: 14
   shuffle: true
   drop_last: true

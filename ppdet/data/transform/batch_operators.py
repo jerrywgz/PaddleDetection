@@ -32,7 +32,6 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     'PadBatch', 'RandomShape', 'PadMultiScaleTest', 'Gt2YoloTarget',
-    'CornerBatchTarget'
 ]
 
 
@@ -250,24 +249,3 @@ class Gt2YoloTarget(BaseOperator):
         return samples
 
 
-@register_op
-class CornerBatchTarget(BaseOperator):
-    """
-    """
-
-    def __init__(self):
-        super(CornerBatchTarget, self).__init__()
-
-    def __call__(self, samples, context=None):
-        """
-        Args:
-            samples (list): a batch of sample, each is dict.
-        """
-        tl_shape = samples[0]['tl_heatmaps'].shape
-        off_size = tl_shape[1] * tl_shape[2]
-        for ind, data in enumerate(samples):
-            tl_tags = data['tl_tags']
-            br_tags = data['br_tags']
-            tl_tags += ind * off_size
-            br_tags += ind * off_size
-        return samples

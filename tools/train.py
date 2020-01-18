@@ -172,8 +172,23 @@ def main():
 
     exe.run(startup_prog)
 
-    name_list = ['image', 'hg_cnvs_0_bn_output.tmp_3', 'tl_heats_0_1.tmp_1', 'tl_heatmaps', 'elementwise_min_0',
-                 'tmp_38', 'concat_0.tmp_0', 'reduce_sum_15.tmp_0', 'reduce_sum_19.tmp_0']
+    name_list = ['image', 'tl_heats_0_1.tmp_1', 'tl_heatmaps', 'elementwise_min_0',
+                 'tmp_38', 'concat_0.tmp_0', 'reduce_sum_15.tmp_0', 'reduce_sum_19.tmp_0', 
+                 'elementwise_min_0@GRAD', 'sigmoid_0.tmp_0@GRAD', 'concat_0.tmp_0@GRAD', 'concat_1.tmp_0@GRAD',
+                 'concat_4.tmp_0@GRAD', 'concat_5.tmp_0@GRAD', 'tl_tags_0_1.tmp_1@GRAD', 'tl_offs_0_1.tmp_1@GRAD',
+                 'tl_modules_0_pool1.tmp_0@GRAD', 'tl_modules_0_pool2.tmp_0@GRAD', 'relu_1.tmp_0@GRAD',
+                 'tl_modules_0_bn1.tmp_2@GRAD', 'tl_modules_0_p_conv1.tmp_0@GRAD',
+                 'tl_modules_0_p_bn1.tmp_2@GRAD', 'tl_modules_0_conv1.tmp_0@GRAD',
+                 'tl_modules_0_p1_conv1_output.tmp_0@GRAD',
+                 'tl_modules_0_p1_conv1_output.tmp_0', 'br_modules_0_p1_conv1_output.tmp_0',
+                 'br_modules_0_p1_conv1_output.tmp_0@GRAD', 
+                 'relu_2.tmp_0@GRAD', 'br_modules_0_bn1.tmp_2@GRAD', 'br_modules_0_pool1.tmp_0@GRAD',
+                 'br_modules_0_pool2.tmp_0@GRAD', 
+                 'br_heats_0_1.tmp_1@GRAD', 'br_tags_0_1.tmp_1@GRAD', 'br_offs_0_1.tmp_1@GRAD',
+                 'br_heats_0_1.tmp_1', 'br_modules_0_p_bn1.tmp_2@GRAD', 'br_modules_0_bn1.tmp_2@GRAD',
+                 'br_modules_0_conv1.tmp_0@GRAD', 'tmp_6@GRAD',
+                 'br_modules_0_conv2_output.tmp_0@GRAD', 'relu_13.tmp_0@GRAD',
+                 'tl_modules_0_conv2_bn_output.tmp_3@GRAD', 'br_modules_0_conv2_bn_output.tmp_3@GRAD']
     for name in name_list:
         fluid.framework._get_var(name, train_prog).persistable = True 
     for var in train_prog.list_vars():
@@ -276,6 +291,7 @@ def main():
         eta = str(datetime.timedelta(seconds=int(eta_sec)))
         outs = exe.run(compiled_train_prog, fetch_list=train_values)
         stats = {k: np.array(v).mean() for k, v in zip(train_keys, outs[:-1])}
+        dump_list = ['tl_modules_0_conv2_bn_output.tmp_3@GRAD', 'br_modules_0_conv2_bn_output.tmp_3@GRAD']
 
         for n in name_list:
             print('name: ', n)
@@ -284,6 +300,11 @@ def main():
             print(n, np_t)
             if n == 'tl_heatmaps' or 'br_heatmaps':
                 print(np.where(np_t == 1))
+            if n == 'tl_offs_0_1.tmp_1@GRAD' or n == 'tl_tags_0_1.tmp_1@GRAD':
+                print('non 0 '+ n, np_t[np.where(np_t != 0)])
+            if n in dump_list:
+                print('dumping '+n)
+                np_t.dump(n+'.pkl')
 
         if FLAGS.use_tb:
             if it % cfg.log_iter == 0:

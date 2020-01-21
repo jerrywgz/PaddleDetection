@@ -53,12 +53,8 @@ public:
                 sizeof(T) * x->numel(), dev_ctx.stream());
 
     int threads = kNumCUDAThreads;
-    for (int ind = 1; ind < height; ind <<= 1) {
-      int cur_num = NC_num * width * (height - ind);
-      int blocks = NumBlocks(cur_num);
-
-      MaxOut<T><<<blocks, threads>>>(ind, NC_num, height, width, 2, 0, height - ind, output_data);
-    }
+    int blocks = NumBlocks(NC_num * width * height);
+    CornerMaxOut<T><<<blocks, threads>>>(NC_num, height, width, 2, true, output_data);
   }
 };
 

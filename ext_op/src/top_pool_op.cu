@@ -90,7 +90,7 @@ class TopPoolGradOpCUDAKernel : public framework::OpKernel<T> {
     // inital the max_ind by 0
     auto max_ind_ptr = memory::Alloc(gpu_place, num * sizeof(int));
     int* max_ind_data = reinterpret_cast<int*>(max_ind_ptr->ptr());
-    cudaMemset(max_ind_data, height - 1, num*sizeof(int));
+    FillConstant<int><<<blocks, threads>>>(max_ind_data, num, height - 1);
 
     // accumulate gradient on the location with maximum value
     ScatterAddOnAxis<T><<<blocks, threads>>>(out_grad->data<T>(), height - 1, max_ind_data, NC_num, height, width, 2, in_grad_data);

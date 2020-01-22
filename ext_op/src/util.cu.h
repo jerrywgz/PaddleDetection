@@ -25,6 +25,12 @@ using framework::Tensor;
   for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < (n); \
        i += blockDim.x * gridDim.x)
 
+template <typename T>
+__global__ void FillConstant(T* x, int num, int fill_num) {
+  CUDA_1D_KERNEL_LOOP(i, num) {
+    x[i] = static_cast<T>(fill_num);
+  }
+}
 
 template <typename T>
 __global__ void SliceOnAxis(const T* x, const int NC_num, const int H, const int W,

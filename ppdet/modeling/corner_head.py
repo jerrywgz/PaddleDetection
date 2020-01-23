@@ -30,7 +30,9 @@ __all__ = ['CornerHead']
 
 def corner_pool(x, dim, pool1, pool2, name=None):
     p1_conv1 = _conv_norm(x, 3, 128, pad=1, act='relu', name=name + '_p1_conv1')
+    print('p1_conv1: ', p1_conv1)
     pool1 = pool1(p1_conv1, name=name + '_pool1')
+    print('pool1: ', pool1)
     p2_conv1 = _conv_norm(x, 3, 128, pad=1, act='relu', name=name + '_p2_conv1')
     pool2 = pool2(p2_conv1, name=name + '_pool2')
 
@@ -72,22 +74,25 @@ def corner_pool(x, dim, pool1, pool2, name=None):
     return conv2
 
 
-def gather_feat(feat, ind, batch_size=1):
+def gather_feat(feat, ind, batch_size=1, debug=False):
     feats = []
     for bind in range(batch_size):
         feat_b = feat[bind]
         ind_b = ind[bind]
+        ind_b.stop_gradient = True
         feat_bg = fluid.layers.gather(feat_b, ind_b)
         feats.append(fluid.layers.unsqueeze(feat_bg, axes=[0]))
     feat_g = fluid.layers.concat(feats, axis=0)
     return feat_g
 
 
-def mask_feat(feat, ind, batch_size=1):
+def mask_feat(feat, ind, batch_size=1, debug=False):
     feat_t = fluid.layers.transpose(feat, [0, 2, 3, 1])
     C = feat_t.shape[3]
     feat_r = fluid.layers.reshape(feat_t, [0, -1, C])
-    return gather_feat(feat_r, ind, batch_size)
+    if debug:
+        print('debug br_feat_r: ', feat_r)
+    return gather_feat(feat_r, ind, batch_size, debug)
 
 
 def nms(heat):
@@ -277,12 +282,14 @@ class CornerHead(object):
                 cornerpool_lib.top_pool,
                 cornerpool_lib.left_pool,
                 name='tl_modules_' + str(ind))
+            print('tl_modules_'+ str(ind) + ': ', tl_modules)
             br_modules = corner_pool(
                 cnv,
                 256,
                 cornerpool_lib.bottom_pool,
                 cornerpool_lib.right_pool,
                 name='br_modules_' + str(ind))
+            print('br_modules_'+ str(ind) + ': ', br_modules)
 
             tl_heat = self.pred_mod(
                 tl_modules, self.num_classes, name='tl_heats_' + str(ind))
@@ -301,6 +308,12 @@ class CornerHead(object):
             self.br_tags.append(br_tag)
             self.tl_offs.append(tl_off)
             self.br_offs.append(br_off)
+        print('self.tl_heats: ', self.tl_heats)
+        print('self.br_heats: ', self.br_heats)
+        print('self.tl_tags: ', self.tl_tags)
+        print('self.br_tags: ',self.br_tags)
+        print('self.tl_offs: ', self.tl_offs)
+        print('self.br_offs: ', self.br_offs)
 
     def focal_loss(self, preds, gt, gt_masks):
         preds_clip = []
@@ -412,9 +425,10 @@ class CornerHead(object):
             for tl_tag in self.tl_tags
         ]
         br_tags = [
-            mask_feat(br_tag, gt_br_ind, self.train_batch_size)
+            mask_feat(br_tag, gt_br_ind, self.train_batch_size, True)
             for br_tag in self.br_tags
         ]
+        print('mask br_tags: ', br_tags)
 
         pull_loss, push_loss = 0, 0
 

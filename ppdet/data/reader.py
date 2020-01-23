@@ -412,6 +412,7 @@ def create_reader(cfg, max_iter=0, global_cfg=None):
         while True:
             for _batch in reader:
                 if len(_batch) > 0:
+                    _batch = _batch[::-1]
                     yield _batch
                     n += 1
                 if max_iter > 0 and n == max_iter:

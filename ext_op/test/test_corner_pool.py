@@ -75,7 +75,7 @@ class TestRightPoolOp(unittest.TestCase):
     def test_check_output(self):
         self.funcmap()
         self.setup()
-        x_shape = (2, 3, 6, 6)
+        x_shape = (2, 16, 20, 20)
         x_type = "float64"
 
         sp = fluid.Program()
@@ -99,7 +99,6 @@ class TestRightPoolOp(unittest.TestCase):
 
         self.assertTrue(np.allclose(outs, out_np))
 
-
 class TestTopPoolOp(TestRightPoolOp):
     def setup(self):
         self.name = 'top_x'
@@ -113,7 +112,6 @@ class TestBottomPoolOp(TestRightPoolOp):
 class TestLeftPoolOp(TestRightPoolOp):
     def setup(self):
         self.name = 'left_x'
-
 
 if __name__ == "__main__":
     unittest.main()

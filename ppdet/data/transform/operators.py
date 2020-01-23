@@ -1147,8 +1147,9 @@ class ColorDistort(BaseOperator):
 
     def apply_saturation(self, img, img_gray=None):
         if self.corner_jitter:
-            alpha = 1. + np.random.uniform(
-                low=-self.saturation, high=self.saturation)
+            #alpha = 1. + np.random.uniform(
+            #    low=-self.saturation, high=self.saturation)
+            alpha = 1.
             self._blend(alpha, img, img_gray[:, :, None])
             return img
         low, high, prob = self.saturation
@@ -1166,8 +1167,9 @@ class ColorDistort(BaseOperator):
 
     def apply_contrast(self, img, img_gray=None):
         if self.corner_jitter:
-            alpha = 1. + np.random.uniform(
-                low=-self.contrast, high=self.contrast)
+            #alpha = 1. + np.random.uniform(
+            #    low=-self.contrast, high=self.contrast)
+            alpha = 1.
             img_mean = img_gray.mean()
             self._blend(alpha, img, img_mean)
             return img
@@ -1182,8 +1184,9 @@ class ColorDistort(BaseOperator):
 
     def apply_brightness(self, img, img_gray=None):
         if self.corner_jitter:
-            alpha = 1 + np.random.uniform(
-                low=-self.brightness, high=self.brightness)
+            #alpha = 1 + np.random.uniform(
+            #    low=-self.brightness, high=self.brightness)
+            alpha = 1.0
             img *= alpha
             return img
         low, high, prob = self.brightness
@@ -1214,7 +1217,8 @@ class ColorDistort(BaseOperator):
                 img = img.astype(np.float32, copy=False)
                 img /= 255.
             img_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-            distortions = np.random.permutation(functions)
+            distortions = functions
+            #distortions = np.random.permutation(functions)
             for func in distortions:
                 img = func(img, img_gray)
             sample['image'] = img
@@ -1519,7 +1523,8 @@ class Lighting(BaseOperator):
         self.eigvec = np.array(eigvec).astype('float32')
 
     def __call__(self, sample, context=None):
-        alpha = np.random.normal(scale=self.alphastd, size=(3, ))
+        #alpha = np.random.normal(scale=self.alphastd, size=(3, ))
+        alpha = [1., 1., 1.]
         sample['image'] += np.dot(self.eigvec, self.eigval * alpha)
         return sample
 
@@ -1618,6 +1623,7 @@ class CornerTarget(BaseOperator):
             br_tags[tag_lens] = ybr * self.output_size[1] + xbr
             tag_lens += 1
 
+        print('feed br_tags: ', sample['im_file'], br_tags)
         tag_masks[:tag_lens] = 1
 
         sample['tl_heatmaps'] = tl_heatmaps
@@ -1656,15 +1662,18 @@ class CornerCrop(BaseOperator):
     def __call__(self, sample, context=None):
         im_h, im_w = int(sample['h']), int(sample['w'])
         if self.is_train:
-            scale = np.random.choice(self.random_scales)
+            #scale = np.random.choice(self.random_scales)
+            scale = 1.
             height = int(self.input_size * scale)
             width = int(self.input_size * scale)
 
             w_border = self._get_border(self.border, im_w)
             h_border = self._get_border(self.border, im_h)
 
-            ctx = np.random.randint(low=w_border, high=im_w - w_border)
-            cty = np.random.randint(low=h_border, high=im_h - h_border)
+            #ctx = np.random.randint(low=w_border, high=im_w - w_border)
+            #cty = np.random.randint(low=h_border, high=im_h - h_border)
+            ctx = w_border + 1
+            cty = h_border + 1
 
         else:
             cty, ctx = im_h // 2, im_w // 2

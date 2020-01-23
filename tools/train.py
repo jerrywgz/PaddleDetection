@@ -164,12 +164,32 @@ def main():
     # Set it to be 1 to save memory usages, so that unused variables in
     # local execution scopes can be deleted after each iteration.
     exec_strategy.num_iteration_per_drop_scope = 1
+    exec_strategy.num_threads = 1
     if FLAGS.dist:
         dist_utils.prepare_for_multi_process(exe, build_strategy, startup_prog,
                                              train_prog)
         exec_strategy.num_threads = 1
 
     exe.run(startup_prog)
+
+    name_list = ['hg_cnvs_0_bn_output.tmp_3', 'hg_cnvs_1_bn_output.tmp_3',
+                 'tl_modules_0_p1_conv1_bn_output.tmp_3', 'br_modules_0_p1_conv1_bn_output.tmp_3',
+                 'tl_modules_1_p1_conv1_bn_output.tmp_3', 'br_modules_1_p1_conv1_bn_output.tmp_3',
+                 'tl_modules_0_pool1.tmp_0', 'br_modules_0_pool1.tmp_0',
+                 'tl_modules_1_pool1.tmp_0', 'br_modules_1_pool1.tmp_0',
+                 'tl_modules_0_conv2_bn_output.tmp_3', 
+                 'tl_modules_1_conv2_bn_output.tmp_3',
+                 'br_modules_0_conv2_bn_output.tmp_3',
+                 'br_modules_1_conv2_bn_output.tmp_3',
+                 'tl_heats_0_1.tmp_1', 'tl_heats_1_1.tmp_1', 'br_heats_0_1.tmp_1', 'br_heats_1_1.tmp_1',
+                 'tl_tags_0_1.tmp_1', 'tl_tags_1_1.tmp_1', 'br_tags_0_1.tmp_1', 'br_tags_1_1.tmp_1',
+                 'tl_offs_0_1.tmp_1', 'tl_offs_1_1.tmp_1', 'br_offs_0_1.tmp_1', 'br_offs_1_1.tmp_1',
+                 'concat_2.tmp_0', 'reshape2_2.tmp_0', 'reshape2_3.tmp_0']
+    for name in name_list:
+        fluid.framework._get_var(name+'@GRAD', train_prog).persistable = True
+        fluid.framework._get_var(name, train_prog).persistable = True 
+    
+
     compiled_train_prog = fluid.CompiledProgram(train_prog).with_data_parallel(
         loss_name=loss.name,
         build_strategy=build_strategy,
@@ -192,6 +212,39 @@ def main():
     elif cfg.pretrain_weights:
         checkpoint.load_params(
             exe, train_prog, cfg.pretrain_weights, ignore_params=ignore_params)
+
+    import cPickle as cp
+    torch_param = cp.load(open('torch_param.pkl', 'rb'))
+    trans_torch_param = {}
+    for k, v in torch_param.items():
+        tn = k.replace(".", "_")[7:]
+        if 'pre' in tn:
+            if 'skip_1' in tn:
+                tn = tn[:14]+'bn'+tn[15:]
+            elif 'skip_0' in tn:
+                tn = tn[:14]+'conv'+tn[15:]
+        elif 'inters__' in tn:
+            if '0_0' in tn:
+                tn = tn[:13] + 'conv' + tn[14:]
+            elif '0_1' in tn:
+                tn = tn[:13] + 'bn' + tn[14:]
+        elif 'cnvs__' in tn:
+            if '0_0' in tn:
+                tn = tn[:11] + 'conv_weight'
+            elif '0_1' in tn:
+                tn = tn[:11] + 'bn' + tn[12:]
+        trans_torch_param[tn] = v
+    param_list = ['hg_pre_0_conv_weight']
+    #for p in param_list:
+    #    print('init param: {}, value: {}'.format(p, trans_torch_param[p])) 
+    param_name_list =train_prog.block(0).all_parameters()
+    for p in param_name_list:
+         name = p.name
+         t = fluid.global_scope().find_var(name).get_tensor()
+         if name not in trans_torch_param.keys():
+             print('not exist: ', name)
+         else:
+             t.set(trans_torch_param[name], place)
 
     train_reader = create_reader(cfg.TrainReader, (cfg.max_iters - start_iter) *
                                  devices_num, cfg)
@@ -231,7 +284,20 @@ def main():
         eta_sec = (cfg.max_iters - it) * time_cost
         eta = str(datetime.timedelta(seconds=int(eta_sec)))
         outs = exe.run(compiled_train_prog, fetch_list=train_values)
+
         stats = {k: np.array(v).mean() for k, v in zip(train_keys, outs[:-1])}
+        for n in name_list:
+            print('name: ', n)
+            t = fluid.global_scope().find_var(n).get_tensor()
+            np_t = np.abs(np.array(t)).mean()
+            print(n, np_t)
+
+            t = fluid.global_scope().find_var(n+'@GRAD').get_tensor()
+            np_t = np.abs(np.array(t)).mean()
+            print(n+'@GRAD', np_t)
+           
+            if n == 'tl_heatmaps' or 'br_heatmaps':
+                print(np.where(np_t == 1))
 
         # use tb-paddle to log loss
         if FLAGS.use_tb:

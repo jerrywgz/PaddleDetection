@@ -1,11 +1,6 @@
 import os
 import paddle.fluid as fluid
 
-file_dir = os.path.dirname(os.path.abspath(__file__))
-fluid.load_op_library(os.path.join(file_dir, 'src/cornerpool_lib.so'))
-
-from paddle.fluid.layer_helper import LayerHelper
-
 __all__ = [
     'bottom_pool',
     'top_pool',
@@ -37,13 +32,16 @@ def bottom_pool(input, name=None):
                 name='input', shape=[2, 64, 10, 10], dtype='float32')
             output = corner_pool.bottom_pool(input)
     """
-    helper = LayerHelper('bottom_pool', **locals())
-    dtype = helper.input_dtype()
-    output = helper.create_variable_for_type_inference(dtype)
-    helper.append_op(
-        type="bottom_pool", inputs={"X": input}, outputs={"Output": output})
+    H = input.shape[2]
+    i = 1
+    output = input
+    while i < H:
+        cur = output[:,:,i:,:]
+        next = output[:,:,:H-i,:]
+        max_v = fluid.layers.elementwise_max(cur,next)
+        output = fluid.layers.concat([output[:,:,:i,:], max_v], axis=2)
+        i *= 2
     return output
-
 
 def top_pool(input, name=None):
     """
@@ -69,13 +67,16 @@ def top_pool(input, name=None):
             output = corner_pool.top_pool(input)
 
     """
-    helper = LayerHelper('top_pool', **locals())
-    dtype = helper.input_dtype()
-    output = helper.create_variable_for_type_inference(dtype)
-    helper.append_op(
-        type="top_pool", inputs={"X": input}, outputs={"Output": output})
+    H = input.shape[2]
+    i = 1
+    output = input
+    while i < H:
+        cur = output[:,:,:H-i,:]
+        next = output[:,:,i:,:]
+        max_v = fluid.layers.elementwise_max(cur,next)
+        output = fluid.layers.concat([max_v, output[:,:,H-i:,:]], axis=2)
+        i *= 2
     return output
-
 
 def right_pool(input, name=None):
     """
@@ -101,13 +102,16 @@ def right_pool(input, name=None):
             output = corner_pool.right_pool(input)
 
     """
-    helper = LayerHelper('right_pool', **locals())
-    dtype = helper.input_dtype()
-    output = helper.create_variable_for_type_inference(dtype)
-    helper.append_op(
-        type="right_pool", inputs={"X": input}, outputs={"Output": output})
+    W = input.shape[3]
+    i = 1
+    output = input
+    while i < W:
+        cur = output[:,:,:,i:]
+        next = output[:,:,:,:W-i]
+        max_v = fluid.layers.elementwise_max(cur,next)
+        output = fluid.layers.concat([output[:,:,:,:i], max_v], axis=-1)
+        i *= 2
     return output
-
 
 def left_pool(input, name=None):
     """
@@ -133,9 +137,18 @@ def left_pool(input, name=None):
             output = corner_pool.left_pool(input)
 
     """
-    helper = LayerHelper('left_pool', **locals())
-    dtype = helper.input_dtype()
-    output = helper.create_variable_for_type_inference(dtype)
-    helper.append_op(
-        type="left_pool", inputs={"X": input}, outputs={"Output": output})
+    W = input.shape[3]
+    i = 1
+    output = input
+    while i < W:
+        cur = output[:,:,:,:W-i]
+        next = output[:,:,:,i:]
+        print(cur)
+        print(next)
+        max_v = fluid.layers.elementwise_max(cur,next)
+        output = fluid.layers.concat([max_v, output[:,:,:,W-i:]], axis=-1)
+        print(output)
+        i *= 2
     return output
+
+

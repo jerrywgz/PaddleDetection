@@ -6,7 +6,7 @@ use_gpu: true
 max_iters: 500000
 log_smooth_window: 20
 log_iter: 20
-save_dir: output
+save_dir: output_python_pool
 snapshot_iter: 10000
 metric: COCO
 pretrain_weights: NULL
@@ -57,7 +57,7 @@ TrainReader:
     !COCODataSet
     image_dir: train2017
     anno_path: annotations/instances_train2017.json
-    dataset_dir:  /paddle/wangguanzhong/data/coco
+    dataset_dir:  /paddle/dataset/coco
     with_background: false
   sample_transforms:
   - !DecodeImage
@@ -106,7 +106,7 @@ EvalReader:
     !COCODataSet
       image_dir: val2017
       anno_path: annotations/instances_val2017.json
-      dataset_dir: /paddle/wangguanzhong/data/coco
+      dataset_dir: /paddle/dataset/coco
       with_background: false
   sample_transforms:
   - !DecodeImage

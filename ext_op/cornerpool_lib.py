@@ -143,11 +143,8 @@ def left_pool(input, name=None):
     while i < W:
         cur = output[:,:,:,:W-i]
         next = output[:,:,:,i:]
-        print(cur)
-        print(next)
         max_v = fluid.layers.elementwise_max(cur,next)
         output = fluid.layers.concat([max_v, output[:,:,:,W-i:]], axis=-1)
-        print(output)
         i *= 2
     return output
 

@@ -22,8 +22,6 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-@register
-@serializable
 class COCODataSet(DataSet):
     """
     Load COCO records with annotations in json file 'anno_path'

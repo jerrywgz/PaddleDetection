@@ -12,10 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from . import coco
 from . import voc
+from . import ncp
 from . import widerface
 
-from .coco import *
 from .voc import *
+from .ncp import *
 from .widerface import *

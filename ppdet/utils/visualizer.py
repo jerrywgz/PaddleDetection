@@ -19,7 +19,7 @@ from __future__ import unicode_literals
 
 import numpy as np
 from PIL import Image, ImageDraw
-
+import cv2
 from .colormap import colormap
 
 __all__ = ['visualize_results']
@@ -36,8 +36,8 @@ def visualize_results(image,
     """
     if mask_results:
         image = draw_mask(image, im_id, mask_results, threshold)
-    if bbox_results:
-        image = draw_bbox(image, im_id, catid2name, bbox_results, threshold)
+    #if bbox_results:
+        #image = draw_bbox(image, im_id, catid2name, bbox_results, threshold)
     return image
 
 
@@ -57,13 +57,24 @@ def draw_mask(image, im_id, segms, threshold, alpha=0.7):
             continue
         import pycocotools.mask as mask_util
         mask = mask_util.decode(segm) * 255
-        color_mask = color_list[mask_color_id % len(color_list), 0:3]
-        mask_color_id += 1
-        for c in range(3):
-            color_mask[c] = color_mask[c] * (1 - w_ratio) + w_ratio * 255
-        idx = np.nonzero(mask)
-        img_array[idx[0], idx[1], :] *= 1.0 - alpha
-        img_array[idx[0], idx[1], :] += alpha * color_mask
+        contour_mask = np.array(mask)/255
+        contours, hierarchy = cv2.findContours((mask).astype(np.uint8), cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
+        cv2.drawContours(img_array, contours, -1, (0, 255, 0), 1) 
+        # mask_new, contours, hierarchy = cv2.findContours((mask).astype(np.uint8), cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
+        #segmentation = []
+        #for contour in contours:
+        #    contour_list = contour.flatten().tolist()
+        #    if len(contour_list) > 4:# and cv2.contourArea(contour)>10000
+        #        segmentation.append(contour_list)
+        #print('segmentation: ', segmentation)
+
+        #color_mask = color_list[mask_color_id % len(color_list), 0:3]
+        #mask_color_id += 1
+        #for c in range(3):
+        #    color_mask[c] = color_mask[c] * (1 - w_ratio) + w_ratio * 255
+        #idx = np.nonzero(mask)
+        #img_array[idx[0], idx[1], :] *= 1.0 - alpha
+        #img_array[idx[0], idx[1], :] += alpha * color_mask
     return Image.fromarray(img_array.astype('uint8'))
 
 

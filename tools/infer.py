@@ -84,7 +84,7 @@ def get_test_images(infer_dir, infer_img):
     infer_dir = os.path.abspath(infer_dir)
     assert os.path.isdir(infer_dir), \
         "infer_dir {} is not a directory".format(infer_dir)
-    exts = ['jpg', 'jpeg', 'png', 'bmp']
+    exts = ['jpg', 'jpeg', 'png', 'bmp', 'npy']
     exts += [ext.upper() for ext in exts]
     for ext in exts:
         images.extend(glob.glob('{}/*.{}'.format(infer_dir, ext)))
@@ -201,6 +201,9 @@ def main():
         im_ids = res['im_id'][0]
         for im_id in im_ids:
             image_path = imid2path[int(im_id)]
+            layer_id = image_path.split('/')[-1][:-4]
+            name_list = image_path.split('/')[:-2]+['png',layer_id+'.png']
+            image_path = '/'.join(name_list)
             image = Image.open(image_path).convert('RGB')
 
             # use tb-paddle to log original image           

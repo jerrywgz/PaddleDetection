@@ -491,7 +491,7 @@ class NormalizeImage(BaseOperator):
                         mean = np.array(self.mean)[np.newaxis, np.newaxis, :]
                         std = np.array(self.std)[np.newaxis, np.newaxis, :]
                     if self.is_scale:
-                        im = im / 255.0
+                        im = im / 1000.0
                     im -= mean
                     im /= std
                     sample[k] = im

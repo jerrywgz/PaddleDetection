@@ -114,8 +114,52 @@ def mask_eval(results, anno_file, outfile, resolution, thresh_binarize=0.5):
     with open(outfile, 'w') as f:
         json.dump(segm_results, f)
 
-    cocoapi_eval(outfile, 'segm', coco_gt=coco_gt)
+    #cocoapi_eval(outfile, 'segm', coco_gt=coco_gt)
+    return dice_eval(outfile, anno_file)
 
+def dice_eval(outfile, anno_file):
+    import pycocotools.mask as mask_util
+    gt_anno = json.load(open(anno_file))
+    dt_anno = json.load(open(outfile))
+    total_num = len(gt_anno['images'])
+    gt_map = np.zeros((total_num,512,512), dtype='uint8')
+    dt_map = np.zeros((total_num,512,512), dtype='uint8')
+
+    for obj in gt_anno['annotations']:
+        zero_im = np.zeros((512,512), dtype='uint8')
+        image_id = obj['image_id']
+        segm = obj['segmentation']
+        segm = np.reshape(np.array(segm), (-1, 2)).astype(np.int32)
+        cv2.fillPoly(zero_im, np.int32([segm]), 1)
+        gt_map[image_id] = zero_im
+    gt_map = np.array(gt_map > 0).astype(np.uint8)
+
+    for obj in dt_anno:
+        zero_im = np.zeros((512,512), dtype='uint8')
+        image_id = obj['image_id']
+        segm = obj['segmentation']
+        
+        segm = mask_util.decode(segm)
+        idx = np.nonzero(segm)
+        dt_map[image_id, idx[0], idx[1]] = 1
+    dt_map = np.array(dt_map > 0).astype(np.uint8)
+    
+    dice_score = np.zeros((total_num))
+    for i in range(total_num):
+        gt = gt_map[i]
+        dt = dt_map[i]
+        intersect = np.sum(gt+dt>1)
+        base = np.sum(gt) + np.sum(dt)
+        if base == 0:
+            score = 1.
+        else:
+            score = 2*float(intersect) / float(base)
+        dice_score[i] = score 
+    
+    print('dice score: ', dice_score.mean())
+    return dice_score.mean()
+    
+        
 
 def cocoapi_eval(jsonfile,
                  style,

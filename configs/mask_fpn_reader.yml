@@ -15,8 +15,20 @@ TrainReader:
   - !NormalizeImage
     is_channel_first: false
     is_scale: true
-    mean: [-0.6922, -0.6922, -0.6922]
-    std: [0.51212, 0.51212, 0.51212]
+    mean: [0.398, 0.398, 0.398] #[-0.6479, -0.6479, -0.6479]
+    std: [0.326, 0.398, 0.398] #[0.4901, 0.4901, 0.4901]
+  - !ResizeImage
+    target_size:
+    - 416
+    - 448
+    - 480
+    - 512
+    - 544
+    - 576
+    - 608
+    - 640
+    - 672
+    max_size: 672
   - !Permute
     to_bgr: false
     channel_first: true
@@ -46,8 +58,8 @@ EvalReader:
   - !NormalizeImage
     is_channel_first: false
     is_scale: true
-    mean: [-0.6922, -0.6922, -0.6922]
-    std: [0.51212, 0.51212, 0.51212]
+    mean: [0.398, 0.398, 0.398] #[-0.6479, -0.6479, -0.6479]
+    std: [0.398, 0.398, 0.398] #[0.4901, 0.4901, 0.4901]
   - !Permute
     channel_first: true
     to_bgr: false

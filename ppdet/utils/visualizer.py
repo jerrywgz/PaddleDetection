@@ -57,6 +57,7 @@ def draw_mask(image, im_id, segms, threshold, alpha=0.7):
             continue
         import pycocotools.mask as mask_util
         mask = mask_util.decode(segm) * 255
+        print('mask: ', mask)
         contour_mask = np.array(mask)/255
         contours, hierarchy = cv2.findContours((mask).astype(np.uint8), cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
         # mask_new, contours, hierarchy = cv2.findContours((mask).astype(np.uint8), cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)

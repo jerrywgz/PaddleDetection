@@ -50,6 +50,8 @@ from ppdet.utils.check import check_gpu, check_version
 import ppdet.utils.checkpoint as checkpoint
 
 import logging
+logging.root.handlers = []
+
 FORMAT = '%(asctime)s-%(levelname)s: %(message)s'
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 logger = logging.getLogger(__name__)
@@ -275,7 +277,7 @@ def main():
                     best_box_ap_list[1] = it
                     checkpoint.save(exe, train_prog,
                                     os.path.join(save_dir, "best_model"))
-                logger.info("Best test box ap: {}, in iter: {}".format(
+                logger.info("Best test dice: {}, in iter: {}".format(
                     best_box_ap_list[0], best_box_ap_list[1]))
 
     train_loader.reset()

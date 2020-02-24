@@ -156,6 +156,7 @@ class DetectionMAP(object):
                 precision.append(float(ac_tp) / (ac_tp + ac_fp))
                 recall.append(float(ac_tp) / count)
 
+            print('precision: {}, recall: {}'.format(np.array(precision), np.array(recall)))
             if self.map_type == '11point':
                 max_precisions = [0.] * 11
                 start_idx = len(precision) - 1

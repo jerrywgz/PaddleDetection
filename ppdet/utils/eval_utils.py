@@ -183,6 +183,7 @@ def eval_results(results,
                  dataset=None):
     """Evaluation for evaluation program results"""
     box_ap_stats = []
+    dice_stats = []
     if metric == 'COCO':
         from ppdet.utils.coco_eval import proposal_eval, bbox_eval, mask_eval
         anno_file = dataset.get_anno()
@@ -208,7 +209,8 @@ def eval_results(results,
             output = 'mask.json'
             if output_directory:
                 output = os.path.join(output_directory, 'mask.json')
-            mask_eval(results, anno_file, output, resolution)
+            dice_stats = mask_eval(results, anno_file, output, resolution)
+            return [dice_stats]
     else:
         if 'accum_map' in results[-1]:
             res = np.mean(results[-1]['accum_map'][0])

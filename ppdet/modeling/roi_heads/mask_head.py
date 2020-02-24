@@ -135,11 +135,22 @@ class MaskHead(object):
         dim = num_classes * resolution * resolution
         mask_logits = fluid.layers.reshape(mask_logits, (-1, dim))
 
+        
         mask_label = fluid.layers.cast(x=mask_int32, dtype='float32')
         mask_label.stop_gradient = True
         loss_mask = fluid.layers.sigmoid_cross_entropy_with_logits(
             x=mask_logits, label=mask_label, ignore_index=-1, normalize=True)
-        loss_mask = fluid.layers.reduce_sum(loss_mask, name='loss_mask')
+
+        #mask_int32 = mask_int32 > 0
+        #mask_label = fluid.layers.cast(x=mask_int32, dtype='float32')[:,resolution*resolution:]
+        #mask_logits = fluid.layers.sigmoid(mask_logits[:,resolution*resolution:])
+        #intersect = fluid.layers.reduce_sum(mask_logits * mask_label)
+        #logits_sum = fluid.layers.reduce_sum(mask_logits * mask_logits)
+        #mask_sum = fluid.layers.reduce_sum(mask_label * mask_label)
+        #mask_sum.stop_gradient = True
+        #loss_mask = 1. - ((2. * intersect) / (mask_sum + logits_sum) ) 
+
+        loss_mask = fluid.layers.reduce_sum(loss_mask, name='loss_mask') * 1.3
         return {'loss_mask': loss_mask}
 
     def get_prediction(self, roi_feat, bbox_pred):

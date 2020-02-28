@@ -50,6 +50,7 @@ from ppdet.utils.check import check_gpu, check_version
 import ppdet.utils.checkpoint as checkpoint
 
 import logging
+logging.root.handlers = []
 FORMAT = '%(asctime)s-%(levelname)s: %(message)s'
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 logger = logging.getLogger(__name__)

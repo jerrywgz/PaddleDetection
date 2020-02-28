@@ -33,24 +33,29 @@ def bottom_pool(input, is_test=False, name=None):
             output = corner_pool.bottom_pool(input)
     """
     if is_test:
-
-        def cond(i, output):
-            return i < H
-
-        def body(i, output):
-            cur = fluid.layers.slice(output, [2], [i], [H])
-            next = fluid.layers.slice(output, [2], [0], [H - i])
-            max_v = fluid.layers.elementwise_max(cur, next)
-            orig = fluid.layers.slice(output, [2], [0], [i])
-            output = fluid.layers.concat([orig, max_v], axis=2)
-            i = i * 2
-            return [i, output]
-
-        H = fluid.layers.shape(input)[2]
+        zero = fluid.layers.fill_constant(shape=[1], dtype='int64', value=0)
         i = fluid.layers.fill_constant(shape=[1], dtype='int32', value=1)
-        output = input
-        output = fluid.layers.while_loop(cond, body, [i, output])
-        return output[-1]
+        H = fluid.layers.shape(input)[2]
+        cond = fluid.layers.less_than(x=i, y=H)
+        bottom_out = fluid.layers.create_array('float32')
+        output = fluid.layers.assign(input)
+        while_op = fluid.layers.While(cond=cond)
+        with while_op.block():
+            idx = fluid.layers.assign(i)
+            Hx = fluid.layers.assign(H)
+            cur = fluid.layers.slice(output, [2], [idx], [Hx])
+            next = fluid.layers.slice(output, [2], [0], [Hx - idx])
+            max_v = fluid.layers.elementwise_max(cur, next)
+            orig = fluid.layers.slice(output, [2], [0], [idx])
+            output = fluid.layers.concat([orig, max_v], axis=2)
+            fluid.layers.array_write(output, zero, bottom_out)
+            i = fluid.layers.increment(x=i, value=1, in_place=True)
+            #i = i * 2
+            fluid.layers.less_than(x=i, y=H, cond=cond)
+            #return [i, output]
+        output, _ = fluid.layers.tensor_array_to_tensor(input=bottom_out, axis=0)
+        
+        return output
 
     H = input.shape[2]
     i = 1
@@ -89,24 +94,26 @@ def top_pool(input, is_test=False, name=None):
 
     """
     if is_test:
-
-        def cond(i, output):
-            return i < H
-
-        def body(i, output):
-            cur = fluid.layers.slice(output, [2], [0], [H - i])
-            next = fluid.layers.slice(output, [2], [i], [H])
-            max_v = fluid.layers.elementwise_max(cur, next)
-            orig = fluid.layers.slice(output, [2], [H - i], [H])
-            output = fluid.layers.concat([max_v, orig], axis=2)
-            i = i * 2
-            return [i, output]
-
-        H = fluid.layers.shape(input)[2]
+        zero = fluid.layers.fill_constant(shape=[1], dtype='int64', value=0)
         i = fluid.layers.fill_constant(shape=[1], dtype='int32', value=1)
-        output = input
-        output = fluid.layers.while_loop(cond, body, [i, output])
-        return output[-1]
+        H = fluid.layers.shape(input)[2]
+        cond = fluid.layers.less_than(x=i, y=H)
+        top_out = fluid.layers.create_array('float32')
+        output = fluid.layers.assign(input)
+        while_op = fluid.layers.While(cond=cond)
+        with while_op.block():
+            idx = fluid.layers.assign(i)
+            Hx = fluid.layers.assign(H)
+            cur = fluid.layers.slice(output, [2], [0], [Hx - idx])
+            next = fluid.layers.slice(output, [2], [idx], [Hx])
+            max_v = fluid.layers.elementwise_max(cur, next)
+            orig = fluid.layers.slice(output, [2], [Hx - idx], [Hx])
+            output = fluid.layers.concat([max_v, orig], axis=2)
+            fluid.layers.array_write(output, zero, top_out)
+            i = fluid.layers.increment(x=i, value=1, in_place=True)
+            fluid.layers.less_than(x=i, y=H, cond=cond)
+        output, _ = fluid.layers.tensor_array_to_tensor(input=top_out, axis=0)
+        return output
 
     H = input.shape[2]
     i = 1
@@ -145,24 +152,27 @@ def right_pool(input, is_test=False, name=None):
 
     """
     if is_test:
-
-        def cond(i, output):
-            return i < W
-
-        def body(i, output):
-            cur = fluid.layers.slice(output, [3], [i], [W])
-            next = fluid.layers.slice(output, [3], [0], [W - i])
-            max_v = fluid.layers.elementwise_max(cur, next)
-            orig = fluid.layers.slice(output, [3], [0], [i])
-            output = fluid.layers.concat([orig, max_v], axis=-1)
-            i = i * 2
-            return [i, output]
-
-        W = fluid.layers.shape(input)[3]
+        zero = fluid.layers.fill_constant(shape=[1], dtype='int64', value=0)
         i = fluid.layers.fill_constant(shape=[1], dtype='int32', value=1)
-        output = input
-        output = fluid.layers.while_loop(cond, body, [i, output])
-        return output[-1]
+        W = fluid.layers.shape(input)[3]
+        cond = fluid.layers.less_than(x=i, y=W)
+        right_out = fluid.layers.create_array('float32')
+        output = fluid.layers.assign(input)
+        while_op = fluid.layers.While(cond=cond)
+        with while_op.block():
+            idx = fluid.layers.assign(i)
+            Wx = fluid.layers.assign(W)
+            cur = fluid.layers.slice(output, [3], [idx], [Wx])
+            next = fluid.layers.slice(output, [3], [0], [Wx - idx])
+            max_v = fluid.layers.elementwise_max(cur, next)
+            orig = fluid.layers.slice(output, [3], [0], [idx])
+            output = fluid.layers.concat([orig, max_v], axis=-1)
+            fluid.layers.array_write(output, zero, right_out)
+            i = fluid.layers.increment(x=i, value=1, in_place=True)
+            fluid.layers.less_than(x=i, y=W, cond=cond)
+        output, _ = fluid.layers.tensor_array_to_tensor(input=right_out, axis=0)
+
+        return output
 
     W = input.shape[3]
     i = 1
@@ -201,24 +211,28 @@ def left_pool(input, is_test=False, name=None):
 
     """
     if is_test:
-
-        def cond(i, output):
-            return i < W
-
-        def body(i, output):
-            cur = fluid.layers.slice(output, [3], [0], [W - i])
-            next = fluid.layers.slice(output, [3], [i], [W])
-            max_v = fluid.layers.elementwise_max(cur, next)
-            orig = fluid.layers.slice(output, [3], [W - i], [W])
-            output = fluid.layers.concat([max_v, orig], axis=-1)
-            i = i * 2
-            return [i, output]
-
-        W = fluid.layers.shape(input)[3]
+        zero = fluid.layers.fill_constant(shape=[1], dtype='int64', value=0)
         i = fluid.layers.fill_constant(shape=[1], dtype='int32', value=1)
-        output = input
-        output = fluid.layers.while_loop(cond, body, [i, output])
-        return output[-1]
+        W = fluid.layers.shape(input)[3]
+        cond = fluid.layers.less_than(x=i, y=W)
+        left_out = fluid.layers.create_array('float32')
+        output = fluid.layers.assign(input)
+        while_op = fluid.layers.While(cond=cond)
+        with while_op.block():
+            idx = fluid.layers.assign(i)
+            Wx = fluid.layers.assign(W)
+            cur = fluid.layers.slice(output, [3], [0], [Wx - idx])
+            next = fluid.layers.slice(output, [3], [idx], [Wx])
+            max_v = fluid.layers.elementwise_max(cur, next)
+            orig = fluid.layers.slice(output, [3], [Wx - idx], [Wx])
+            output = fluid.layers.concat([max_v, orig], axis=-1)
+            fluid.layers.array_write(output, zero, left_out)
+            i = fluid.layers.increment(x=i, value=1, in_place=True)
+            #i = i * 2
+            fluid.layers.less_than(x=i, y=W, cond=cond)
+        output, _ = fluid.layers.tensor_array_to_tensor(input=left_out, axis=0)
+        #print('left: ', output)
+        return output
 
     W = input.shape[3]
     i = 1

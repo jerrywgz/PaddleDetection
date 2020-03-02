@@ -56,26 +56,30 @@ class CornerNetSqueeze(object):
     """
     """
     __category__ = 'architecture'
-    __inject__ = ['backbone', 'corner_head', 'nms']
+    __inject__ = ['backbone', 'corner_head', 'nms', 'fpn']
     __shared__ = ['num_classes']
 
     def __init__(self,
                  backbone,
                  nms=MultiClassSoftNMS().__dict__,
                  corner_head='CornerHead',
-                 num_classes=80):
+                 num_classes=80,
+                 fpn=None):
         super(CornerNetSqueeze, self).__init__()
         self.backbone = backbone
         self.corner_head = corner_head
         self.nms = nms
         self.num_classes = num_classes
+        self.fpn = fpn
         if isinstance(nms, dict):
             self.nms = MultiClassSoftNMS(**nms)
 
     def build(self, feed_vars, mode='train'):
         im = feed_vars['image']
         body_feats = self.backbone(im)
-
+        if self.fpn is not None:
+            body_feats, _ = self.fpn.get_output(body_feats)
+            body_feats = [body_feats.values()[-1]]
         if mode == 'train':
             target_vars = [
                 'tl_heatmaps', 'br_heatmaps', 'tag_masks', 'tl_regrs',

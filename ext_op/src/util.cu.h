@@ -129,5 +129,47 @@ __global__  void ScatterAddOnAxis(const T* input, const int start, const int* ma
   }
 }
 
+template <typename T>
+__global__ void GetMaxInfo(const T* input, const int NC_num,
+                           const int H, const int W, const int axis,
+                           const bool reverse, T* max_val, int* max_ind) {
+   int start = 0;
+   int end = axis == 2 ? H: W;
+   int s = reverse ? end-1 : start;
+   int e = reverse ? start-1 : end;
+   int step = reverse ? -1 : 1;
+   int len = axis == 2 ? W : H;
+   int loc = 0;
+   T val = static_cast<T>(0.);
+   for (int i = s; i < e; ) {
+     CUDA_1D_KERNEL_LOOP(j, NC_num * len) {
+       int NC_id = j / len;
+       int len_id = i % len;
+       
+       if (axis == 2) {
+         loc = NC_id * H * W + i * W + len_id;
+       }
+       else if (axis == 3){
+         loc = NC_id * H * W + len_id * W + i;
+       }
+       val = input[loc];
+       T max_v = max_val[NC_id * len + len_id];
+       if (val > max_v) {
+         max_val[NC_id * len + len_id] = val;
+         max_ind[loc] = loc;
+       }
+       __syncthreads();
+     }
+     i += step;
+   }
+}
+
+template <typename T>
+__global__ void ScatterAdd(const T* input, const int* max_ind, const int grad_num, T* output){
+  CUDA_1D_KERNEL_LOOP(i, grad_num) {
+    platform::CudaAtomicAdd(output + i, input[max_ind[i]]);
+  }
+}
+
 }  // namespace operators
 }  // namespace paddle

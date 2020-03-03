@@ -91,22 +91,19 @@ class LeftPoolGradOpCUDAKernel : public framework::OpKernel<T> {
     int num = grad_num / width;
     int blocks = NumBlocks(num);
 
-    // inital the max_value by the first row of input(x) 
     auto max_val_ptr = memory::Alloc(gpu_place, num * sizeof(T));
     T* max_val_data = reinterpret_cast<T*>(max_val_ptr->ptr());
-    SliceOnAxis<T><<<blocks, threads, 0, dev_ctx.stream()>>>(x->data<T>(), NC_num, height, width, 3, width - 1, width, max_val_data);
 
-    // inital the max_ind by 0
     auto max_ind_ptr = memory::Alloc(gpu_place, num * sizeof(int));
     int* max_ind_data = reinterpret_cast<int*>(max_ind_ptr->ptr());
-    FillConstant<int><<<blocks, threads, 0, dev_ctx.stream()>>>(max_ind_data, num, width - 1);
 
-    ScatterAddOnAxis<T><<<blocks, threads, 0, dev_ctx.stream()>>>(out_grad->data<T>(), width - 1, max_ind_data, NC_num, height, width, 3, in_grad_data);
+    auto max_map_ptr = memory::Alloc(gpu_place, grad_num * sizeof(int));
+    int* max_map_data = reinterpret_cast<int*>(max_map_ptr->ptr());
+    FillConstant<int><<<blocks, threads, 0, dev_ctx.stream()>>>(max_map_data, grad_num, width - 1);
+    
+    GetMaxInfo<T><<<blocks, threads, 0, dev_ctx.stream()>>>(x->data<T>(), NC_num, height, width, 3, true, max_val_data, max_ind_data, max_map_data);
 
-    for (int ind = 1; ind < width; ++ind) {
-      UpdateMaxInfo<T><<<blocks, threads, 0, dev_ctx.stream()>>>(x->data<T>(), NC_num, height, width, 3, width - ind - 1, max_val_data, max_ind_data);
-      ScatterAddOnAxis<T><<<blocks, threads, 0, dev_ctx.stream()>>>(out_grad->data<T>(), width - ind - 1, max_ind_data, NC_num, height, width, 3, in_grad_data); 
-    }
+    ScatterAdd<T><<<blocks, threads, 0, dev_ctx.stream()>>>(out_grad->data<T>(), max_map_data, grad_num, in_grad_data);
   }
 };
 

@@ -88,6 +88,7 @@ def get_test_images(infer_dir, infer_img):
     exts += [ext.upper() for ext in exts]
     for ext in exts:
         images.extend(glob.glob('{}/*.{}'.format(infer_dir, ext)))
+        print('images:', images)
 
     assert len(images) > 0, "no image found in {}".format(infer_dir)
     logger.info("Found {} inference images in total.".format(len(images)))

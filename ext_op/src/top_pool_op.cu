@@ -92,47 +92,20 @@ class TopPoolGradOpCUDAKernel : public framework::OpKernel<T> {
     int num = grad_num / height;
     int blocks = NumBlocks(num);
 
-    
-    /*
-    // inital the max_value by the first row of input(x) 
     auto max_val_ptr = memory::Alloc(gpu_place, num * sizeof(T));
     T* max_val_data = reinterpret_cast<T*>(max_val_ptr->ptr());
-    SliceOnAxis<T><<<blocks, threads, 0, dev_ctx.stream()>>>(x->data<T>(), NC_num, height, width, 2, height - 1, height, max_val_data);
-
-    // inital the max_ind by 0
     auto max_ind_ptr = memory::Alloc(gpu_place, num * sizeof(int));
     int* max_ind_data = reinterpret_cast<int*>(max_ind_ptr->ptr());
-    FillConstant<int><<<blocks, threads, 0, dev_ctx.stream()>>>(max_ind_data, num, height - 1);
+   
 
-    // accumulate gradient on the location with maximum value
-    ScatterAddOnAxis<T><<<blocks, threads, 0, dev_ctx.stream()>>>(out_grad->data<T>(), height - 1, max_ind_data, NC_num, height, width, 2, in_grad_data);
+    auto max_map_ptr = memory::Alloc(gpu_place, grad_num * sizeof(int));
+    int* max_map_data = reinterpret_cast<int*>(max_map_ptr->ptr());
+    FillConstant<int><<<blocks, threads, 0, dev_ctx.stream()>>>(max_map_data, grad_num, height - 1);
 
+    GetMaxInfo<T><<<blocks, threads, 0, dev_ctx.stream()>>>(x->data<T>(), NC_num, height, width, 2, true, max_val_data, max_ind_data, max_map_data);
 
-    for (int ind = 1; ind < height; ++ind) {
-      UpdateMaxInfo<T><<<blocks, threads, 0, dev_ctx.stream()>>>(x->data<T>(), NC_num, height, width, 2, height - ind - 1, max_val_data, max_ind_data);
-      ScatterAddOnAxis<T><<<blocks, threads, 0, dev_ctx.stream()>>>(out_grad->data<T>(), height - ind - 1, max_ind_data, NC_num, height, width, 2, in_grad_data); 
-    }*/
+    ScatterAdd<T><<<blocks, threads, 0, dev_ctx.stream()>>>(out_grad->data<T>(), max_map_data, grad_num, in_grad_data);
 
-    auto max_val_ptr = memory::Alloc(gpu_place, num * sizeof(T));
-    T* max_val_data = reinterpret_cast<T*>(max_val_ptr->ptr());
-    SliceOnAxis<T><<<blocks, threads, 0, dev_ctx.stream()>>>(x->data<T>(), NC_num, height, width, 2, height - 1, height, max_val_data);
-
-    // inital the max_ind by 0
-    auto max_ind_ptr = memory::Alloc(gpu_place, grad_num * sizeof(int));
-    int* max_ind_data = reinterpret_cast<int*>(max_ind_ptr->ptr());
-    cudaMemset(max_ind_data, 0, grad_num*sizeof(int));
-
-    GetMaxInfo<T><<<blocks, threads, 0, dev_ctx.stream()>>>(x->data<T>(), NC_num, height, width, 2, true, max_val_data, max_ind_data);
-
-    auto temp_val = memory::Alloc(platform::CPUPlace(), grad_num * sizeof(int));
-    int* temp_val_data = reinterpret_cast<int*>(temp_val->ptr());
-    memory::Copy(platform::CPUPlace(), temp_val_data, gpu_place, max_ind_data,
-                    sizeof(int) * grad_num, dev_ctx.stream());
-    for (int i = 0; i < grad_num; ++i) {
-      LOG(ERROR)<<"temp_val: "<<i <<" , "<<temp_val_data[i];
-    }
-
-    ScatterAdd<T><<<blocks, threads, 0, dev_ctx.stream()>>>(out_grad->data<T>(), max_ind_data, grad_num, in_grad_data);
 
   }
 };

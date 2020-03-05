@@ -188,11 +188,8 @@ __global__ void GetMaxInfo(const T* input, const int NC_num,
 template <typename T>
 __global__ void ScatterAdd(const T* input, const int* max_map, const int grad_num, T* output){
   CUDA_1D_KERNEL_LOOP(i, grad_num) {
-    platform::CudaAtomicAdd(output + i, input[max_map[i]]);
-    //printf("i: %d, max_ind: %d, input: %f, output: %f\n ", i, max_map[i], input[max_map[i]], output[i]);
+    platform::CudaAtomicAdd(output + max_map[i], input[i]);
   }
-  for (int j = 0; j < grad_num; ++j) {printf("index: %d, in_grad_data: %f\n",j, output[j]);}
-  for (int j = 0; j < grad_num; ++j) {printf("index: %d, out_grad_data: %f\n",j ,input[j]);}
 }
 
 }  // namespace operators

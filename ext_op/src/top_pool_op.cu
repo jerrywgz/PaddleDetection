@@ -92,6 +92,7 @@ class TopPoolGradOpCUDAKernel : public framework::OpKernel<T> {
     int num = grad_num / height;
     int blocks = NumBlocks(num);
 
+
     auto max_val_ptr = memory::Alloc(gpu_place, num * sizeof(T));
     T* max_val_data = reinterpret_cast<T*>(max_val_ptr->ptr());
     auto max_ind_ptr = memory::Alloc(gpu_place, num * sizeof(int));

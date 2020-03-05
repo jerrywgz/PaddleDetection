@@ -105,8 +105,6 @@ class TopPoolGradOpCUDAKernel : public framework::OpKernel<T> {
     GetMaxInfo<T><<<blocks, threads, 0, dev_ctx.stream()>>>(x->data<T>(), NC_num, height, width, 2, true, max_val_data, max_ind_data, max_map_data);
 
     ScatterAdd<T><<<blocks, threads, 0, dev_ctx.stream()>>>(out_grad->data<T>(), max_map_data, grad_num, in_grad_data);
-
-
   }
 };
 

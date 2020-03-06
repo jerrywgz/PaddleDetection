@@ -37,33 +37,32 @@ public:
     PADDLE_ENFORCE(platform::is_gpu_place(ctx.GetPlace()),
                    "This kernel only runs on GPU device.");
     auto *x = ctx.Input<Tensor>("X");
+    auto *max_map = ctx.Output<Tensor>("MaxMap");
     auto *output = ctx.Output<Tensor>("Output");
     auto *x_data = x->data<T>();
     auto x_dims = x->dims();
     int NC_num = x_dims[0] * x_dims[1];
     int height = x_dims[2];
     int width = x_dims[3];
+    int num = x->numel();
     auto& dev_ctx = ctx.cuda_device_context();
 
+    int *max_map_data = max_map->mutable_data<int>(x_dims, dev_ctx.GetPlace());
     T *output_data = output->mutable_data<T>(x_dims, dev_ctx.GetPlace());
     auto gpu_place = boost::get<platform::CUDAPlace>(dev_ctx.GetPlace());
     
-    auto input_val_ptr = memory::Alloc(gpu_place, x->numel() * sizeof(T));
-    T* input_val_data = reinterpret_cast<T*>(input_val_ptr->ptr());
-    memory::Copy(gpu_place, input_val_data, gpu_place, x_data,
-                sizeof(T) * x->numel(), dev_ctx.stream());
-    
-    memory::Copy(gpu_place, output_data, gpu_place, x_data,
-                sizeof(T) * x->numel(), dev_ctx.stream());
-
     int threads = kNumCUDAThreads;
-    for (int ind = 1; ind < width; ind <<= 1) {
-      int cur_num = NC_num * height * (width - ind);    
-      int blocks = NumBlocks(cur_num);
-      MaxOut<T><<<blocks, threads, 0, dev_ctx.stream()>>>(input_val_data, ind, NC_num, height, width, 3, 0, width - ind, output_data);
-      memory::Copy(gpu_place, input_val_data, gpu_place, output_data,
-                  sizeof(T) * x->numel(), dev_ctx.stream());
-    }
+    int blocks = NumBlocks(num);
+
+    auto max_val_ptr = memory::Alloc(gpu_place, num / width * sizeof(T));
+    T* max_val_data = reinterpret_cast<T*>(max_val_ptr->ptr());
+    auto max_ind_ptr = memory::Alloc(gpu_place, num / width * sizeof(int));
+    int* max_ind_data = reinterpret_cast<int*>(max_ind_ptr->ptr());
+
+    GetMaxInfo<T><<<blocks, threads, 0, dev_ctx.stream()>>>(x->data<T>(), NC_num, height, width, 3, true, max_val_data, max_ind_data, max_map_data);
+
+    ScatterAddFw<T><<<blocks, threads, 0, dev_ctx.stream()>>>(x->data<T>(), max_map_data, num, output_data);
+
   }
 };
 
@@ -72,6 +71,7 @@ class LeftPoolGradOpCUDAKernel : public framework::OpKernel<T> {
  public:
   void Compute(const framework::ExecutionContext& ctx) const override {
     auto* x = ctx.Input<Tensor>("X");
+    auto* max_map = ctx.Input<Tensor>("MaxMap");
     auto* out_grad = ctx.Input<Tensor>(framework::GradVarName("Output"));
     auto* in_grad = ctx.Output<Tensor>(framework::GradVarName("X"));
     auto x_dims = x->dims();
@@ -93,17 +93,10 @@ class LeftPoolGradOpCUDAKernel : public framework::OpKernel<T> {
 
     auto max_val_ptr = memory::Alloc(gpu_place, num * sizeof(T));
     T* max_val_data = reinterpret_cast<T*>(max_val_ptr->ptr());
-
     auto max_ind_ptr = memory::Alloc(gpu_place, num * sizeof(int));
     int* max_ind_data = reinterpret_cast<int*>(max_ind_ptr->ptr());
 
-    auto max_map_ptr = memory::Alloc(gpu_place, grad_num * sizeof(int));
-    int* max_map_data = reinterpret_cast<int*>(max_map_ptr->ptr());
-    FillConstant<int><<<blocks, threads, 0, dev_ctx.stream()>>>(max_map_data, grad_num, width - 1);
-    
-    GetMaxInfo<T><<<blocks, threads, 0, dev_ctx.stream()>>>(x->data<T>(), NC_num, height, width, 3, true, max_val_data, max_ind_data, max_map_data);
-
-    ScatterAdd<T><<<blocks, threads, 0, dev_ctx.stream()>>>(out_grad->data<T>(), max_map_data, grad_num, in_grad_data);
+    ScatterAdd<T><<<blocks, threads, 0, dev_ctx.stream()>>>(out_grad->data<T>(), max_map->data<int>(), grad_num, in_grad_data);
   }
 };
 

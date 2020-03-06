@@ -1691,12 +1691,11 @@ class CornerCrop(BaseOperator):
 
         if self.is_train:
             # crop detections
-            gt_bbox = sample['gt_bbox'].copy()
+            gt_bbox = sample['gt_bbox']
             gt_bbox[:, 0:4:2] -= x0
             gt_bbox[:, 1:4:2] -= y0
             gt_bbox[:, 0:4:2] += cropped_ctx - left_w
             gt_bbox[:, 1:4:2] += cropped_cty - top_h
-            sample['gt_bbox'] = gt_bbox
         else:
             sample['borders'] = np.array(
                 [

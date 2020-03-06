@@ -23,6 +23,7 @@ public:
 
   void InferShape(framework::InferShapeContext* ctx) const override {
     PADDLE_ENFORCE(ctx->HasInput("X"), "Input(X) should not be null");
+    ctx->ShareDim("X", /*->*/ "MaxMap");
     ctx->ShareDim("X", /*->*/ "Output");
   }
 
@@ -39,6 +40,7 @@ public:
   void Make() override {
     AddInput("X",
              "Input with shape (batch, C, H, W)");
+    AddOutput("MaxMap", "Max map with index of maximum value of input"); 
     AddOutput("Output", "output with same shape as input(X)");
     AddComment(
         R"Doc(
@@ -56,6 +58,7 @@ public:
 protected:
   void InferShape(framework::InferShapeContext* ctx) const override {
     PADDLE_ENFORCE(ctx->HasInput("X"), "Input(X) should not be null");
+    PADDLE_ENFORCE(ctx->HasInput("MaxMap"), "Input(MaxMap) should not be null");
     PADDLE_ENFORCE(ctx->HasInput(framework::GradVarName("Output")),
                    "Input(Output@GRAD) should not be null");
     auto out_grad_name = framework::GradVarName("Output");
@@ -81,6 +84,7 @@ protected:
     op->SetType("right_pool_grad");
     op->SetInput("X", this->Input("X"));
     op->SetInput(framework::GradVarName("Output"), this->OutputGrad("Output"));
+    op->SetInput("MaxMap", this->Output("MaxMap"));
     op->SetOutput(framework::GradVarName("X"), this->InputGrad("X"));
     op->SetAttrMap(this->Attrs());
     return std::unique_ptr<T>(op);

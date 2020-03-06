@@ -28,10 +28,10 @@ ResNet:
   variant: d
 
 FPN:
-  min_level: 2
+  min_level: 3 
   max_level: 6
   num_chan: 256
-  spatial_scale: [0.03125, 0.0625, 0.125, 0.25]
+  spatial_scale: [0.03125, 0.0625, 0.125]
 
 MultiClassSoftNMS:
   keep_top_k: 100

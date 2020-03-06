@@ -186,6 +186,13 @@ __global__ void GetMaxInfo(const T* input, const int NC_num,
 }
 
 template <typename T>
+__global__ void ScatterAddFw(const T* input, const int* max_map, const int num, T* output){
+  CUDA_1D_KERNEL_LOOP(i, num) {
+    output[i] = input[max_map[i]];
+  }
+}
+
+template <typename T>
 __global__ void ScatterAdd(const T* input, const int* max_map, const int grad_num, T* output){
   CUDA_1D_KERNEL_LOOP(i, grad_num) {
     platform::CudaAtomicAdd(output + max_map[i], input[i]);

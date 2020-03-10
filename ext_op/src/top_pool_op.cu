@@ -42,10 +42,10 @@ public:
     auto *output = ctx.Output<Tensor>("Output");
     auto *x_data = x->data<T>();
     auto x_dims = x->dims();
-    int NC_num = x_dims[0] * x_dims[1];
-    int height = x_dims[2];
-    int width = x_dims[3];
-    int num = x->numel();
+    size_t NC_num = x_dims[0] * x_dims[1];
+    size_t height = x_dims[2];
+    size_t width = x_dims[3];
+    size_t num = x->numel();
     auto& dev_ctx = ctx.cuda_device_context();
 
     int *max_map_data = max_map->mutable_data<int>(x_dims, dev_ctx.GetPlace());
@@ -53,16 +53,17 @@ public:
     auto gpu_place = boost::get<platform::CUDAPlace>(dev_ctx.GetPlace());
     
     int threads = kNumCUDAThreads;
-    int blocks = NumBlocks(num);
+    int blocks = NumBlocks(num / height);
   
     auto max_val_ptr = memory::Alloc(gpu_place, num / height * sizeof(T));
     T* max_val_data = reinterpret_cast<T*>(max_val_ptr->ptr());
-    auto max_ind_ptr = memory::Alloc(gpu_place, num / height * sizeof(int));
-    int* max_ind_data = reinterpret_cast<int*>(max_ind_ptr->ptr());
+    auto max_ind_ptr = memory::Alloc(gpu_place, num / height * sizeof(size_t));
+    size_t* max_ind_data = reinterpret_cast<size_t*>(max_ind_ptr->ptr());
 
     GetMaxInfo<T><<<blocks, threads, 0, dev_ctx.stream()>>>(x->data<T>(), NC_num, height, width, 2, true, max_val_data, max_ind_data, max_map_data);
 
-    ScatterAddFw<T><<<blocks, threads, 0, dev_ctx.stream()>>>(x->data<T>(), max_map_data, num, output_data);
+    blocks = NumBlocks(num);
+    ScatterAddFw<T><<<blocks, threads, 0, dev_ctx.stream()>>>(x->data<T>(), max_map_data, NC_num, height, width, 2, output_data);
   }
 };
 
@@ -75,28 +76,19 @@ class TopPoolGradOpCUDAKernel : public framework::OpKernel<T> {
     auto* out_grad = ctx.Input<Tensor>(framework::GradVarName("Output"));
     auto* in_grad = ctx.Output<Tensor>(framework::GradVarName("X"));
     auto x_dims = x->dims();
-    
     auto& dev_ctx = ctx.cuda_device_context();
     T* in_grad_data = in_grad->mutable_data<T>(x_dims, dev_ctx.GetPlace());
     auto gpu_place = boost::get<platform::CUDAPlace>(dev_ctx.GetPlace());
     
     int threads = kNumCUDAThreads;
-    int NC_num = x_dims[0] * x_dims[1];
-    int height = x_dims[2];
-    int width = x_dims[3];
+    size_t NC_num = x_dims[0] * x_dims[1];
+    size_t height = x_dims[2];
+    size_t width = x_dims[3];
     int grad_num = in_grad->numel();
-    int grad_block = NumBlocks(grad_num);
-    cudaMemset(in_grad_data, 0, grad_num*sizeof(T));
+    int blocks = NumBlocks(grad_num);
+    FillConstant<T><<<blocks, threads, 0, dev_ctx.stream()>>>(in_grad_data, 0, grad_num);
 
-    int num = grad_num / height;
-    int blocks = NumBlocks(num);
-
-    auto max_val_ptr = memory::Alloc(gpu_place, num * sizeof(T));
-    T* max_val_data = reinterpret_cast<T*>(max_val_ptr->ptr());
-    auto max_ind_ptr = memory::Alloc(gpu_place, num / width * sizeof(int));
-    int* max_ind_data = reinterpret_cast<int*>(max_ind_ptr->ptr());
-
-    ScatterAdd<T><<<blocks, threads, 0, dev_ctx.stream()>>>(out_grad->data<T>(), max_map->data<int>(), grad_num, in_grad_data);
+    ScatterAddBw<T><<<blocks, threads, 0, dev_ctx.stream()>>>(out_grad->data<T>(), max_map->data<int>(), NC_num, height, width, 2, in_grad_data);
   }
 };
 

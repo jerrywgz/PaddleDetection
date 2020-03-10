@@ -39,10 +39,10 @@ def bottom_pool(input, name=None):
     """
     helper = LayerHelper('bottom_pool', **locals())
     dtype = helper.input_dtype()
-    max_map = helper.create_variable_for_type_inference(dtype)
     output = helper.create_variable_for_type_inference(dtype)
+    max_map = helper.create_variable_for_type_inference(dtype)
     helper.append_op(
-        type="bottom_pool", inputs={"X": input}, outputs={"MaxMap": max_map,"Output": output})
+        type="bottom_pool", inputs={"X": input}, outputs={"Output": output, "MaxMap":max_map})
     return output
 
 
@@ -72,10 +72,10 @@ def top_pool(input, name=None):
     """
     helper = LayerHelper('top_pool', **locals())
     dtype = helper.input_dtype()
-    max_map = helper.create_variable_for_type_inference(dtype)
     output = helper.create_variable_for_type_inference(dtype)
+    max_map = helper.create_variable_for_type_inference(dtype)
     helper.append_op(
-        type="top_pool", inputs={"X": input}, outputs={"MaxMap": max_map, "Output": output})
+        type="top_pool", inputs={"X": input}, outputs={"Output": output, "MaxMap":max_map})
     return output
 
 
@@ -105,10 +105,10 @@ def right_pool(input, name=None):
     """
     helper = LayerHelper('right_pool', **locals())
     dtype = helper.input_dtype()
-    max_map = helper.create_variable_for_type_inference(dtype)
     output = helper.create_variable_for_type_inference(dtype)
+    max_map = helper.create_variable_for_type_inference(dtype)
     helper.append_op(
-        type="right_pool", inputs={"X": input}, outputs={"MaxMap": max_map,"Output": output})
+        type="right_pool", inputs={"X": input}, outputs={"Output": output, "MaxMap":max_map})
     return output
 
 
@@ -138,8 +138,8 @@ def left_pool(input, name=None):
     """
     helper = LayerHelper('left_pool', **locals())
     dtype = helper.input_dtype()
-    max_map = helper.create_variable_for_type_inference(dtype)
     output = helper.create_variable_for_type_inference(dtype)
+    max_map = helper.create_variable_for_type_inference(dtype)
     helper.append_op(
-        type="left_pool", inputs={"X": input}, outputs={"MaxMap": max_map,"Output": output})
+        type="left_pool", inputs={"X": input}, outputs={"Output": output, "MaxMap":max_map})
     return output

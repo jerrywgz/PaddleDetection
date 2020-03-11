@@ -22,7 +22,7 @@ namespace operators {
 using framework::Tensor;
 
 #define CUDA_1D_KERNEL_LOOP(i, n)                              \
-  for (size_t i = blockIdx.x * blockDim.x + threadIdx.x; i < (n); \
+  for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < (n); \
        i += blockDim.x * gridDim.x)
 
 template <typename T>
@@ -130,23 +130,23 @@ __global__  void ScatterAddOnAxis(const T* input, const int start, const int* ma
 }
 
 template <typename T>
-__global__ void GetMaxInfo(const T* input, const size_t NC_num,
-                           const size_t H, const size_t W, const int axis,
-                           const bool reverse, T* max_val, size_t* max_ind,
+__global__ void GetMaxInfo(const T* input, const int NC_num,
+                           const int H, const int W, const int axis,
+                           const bool reverse, T* max_val, int* max_ind,
                            int* max_map) {
-   size_t start = 0;
-   size_t end = axis == 2 ? H: W;
-   size_t s = reverse ? end-1 : start;
-   size_t e = reverse ? start-1 : end;
-   size_t step = reverse ? -1 : 1;
-   size_t len = axis == 2 ? W : H;
-   size_t loc = 0;
+   int start = 0;
+   int end = axis == 2 ? H: W;
+   int s = reverse ? end-1 : start;
+   int e = reverse ? start-1 : end;
+   int step = reverse ? -1 : 1;
+   int len = axis == 2 ? W : H;
+   int loc = 0;
    T val = static_cast<T>(0.);
-   for (size_t i = s; ; ) {
+   for (int i = s; ; ) {
      if (i == s) {
        CUDA_1D_KERNEL_LOOP(j, NC_num * len) {
-         size_t NC_id = j / len;
-         size_t len_id = j % len;
+         int NC_id = j / len;
+         int len_id = j % len;
          if (axis == 2) {
            loc = NC_id * H * W + i * W + len_id;
          }  else if (axis == 3){
@@ -159,8 +159,8 @@ __global__ void GetMaxInfo(const T* input, const size_t NC_num,
        }
      } else {
        CUDA_1D_KERNEL_LOOP(j, NC_num * len) {
-         size_t NC_id = j / len;
-         size_t len_id = j % len;
+         int NC_id = j / len;
+         int len_id = j % len;
        
          if (axis == 2) {
            loc = NC_id * H * W + i * W + len_id;
@@ -186,33 +186,33 @@ __global__ void GetMaxInfo(const T* input, const size_t NC_num,
 }
 
 template <typename T>
-__global__ void ScatterAddFw(const T* input, const int* max_map, const size_t NC_num, const size_t H, const size_t W, const int axis, T* output){
+__global__ void ScatterAddFw(const T* input, const int* max_map, const int NC_num, const int H, const int W, const int axis, T* output){
   CUDA_1D_KERNEL_LOOP(i, NC_num * H * W) {
     int loc = max_map[i];
-    size_t NC_id = i / (H * W);
-    size_t len_id = 0;
+    int NC_id = i / (H * W);
+    int len_id = 0;
     if (axis == 2) {
       len_id = i % W;
       output[i] = input[NC_id * H * W + loc * W + len_id];
     } else {
-      len_id = i % (H * W) / H;
+      len_id = i % (H * W) / W;
       output[i] = input[NC_id * H * W + len_id * W + loc];
     }
   }
 }
 
 template <typename T>
-__global__ void ScatterAddBw(const T* input, const int* max_map, const size_t NC_num, const size_t H, const size_t W, const int axis, T* output){
+__global__ void ScatterAddBw(const T* input, const int* max_map, const int NC_num, const int H, const int W, const int axis, T* output){
   CUDA_1D_KERNEL_LOOP(i, NC_num * H * W) {
-    size_t loc = max_map[i];
-    size_t NC_id = i / (H * W);
-    size_t len_id = 0;
-    size_t offset = 0;
+    int loc = max_map[i];
+    int NC_id = i / (H * W);
+    int len_id = 0;
+    int offset = 0;
     if (axis == 2) {
       len_id = i % W;
       offset = NC_id * H * W + loc * W + len_id;
     } else {
-      len_id = i % (H * W) / H;
+      len_id = i % (H * W) / W;
       offset = NC_id * H * W + len_id * W + loc;
     }
     platform::CudaAtomicAdd(output + offset, input[i]);

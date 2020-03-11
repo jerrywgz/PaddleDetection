@@ -42,10 +42,10 @@ public:
     auto *output = ctx.Output<Tensor>("Output");
     auto *x_data = x->data<T>();
     auto x_dims = x->dims();
-    size_t NC_num = x_dims[0] * x_dims[1];
-    size_t height = x_dims[2];
-    size_t width = x_dims[3];
-    size_t num = x->numel();
+    int NC_num = x_dims[0] * x_dims[1];
+    int height = x_dims[2];
+    int width = x_dims[3];
+    int num = x->numel();
     auto& dev_ctx = ctx.cuda_device_context();
 
     int *max_map_data = max_map->mutable_data<int>(x_dims, dev_ctx.GetPlace());
@@ -57,8 +57,8 @@ public:
   
     auto max_val_ptr = memory::Alloc(gpu_place, num / height * sizeof(T));
     T* max_val_data = reinterpret_cast<T*>(max_val_ptr->ptr());
-    auto max_ind_ptr = memory::Alloc(gpu_place, num / height * sizeof(size_t));
-    size_t* max_ind_data = reinterpret_cast<size_t*>(max_ind_ptr->ptr());
+    auto max_ind_ptr = memory::Alloc(gpu_place, num / height * sizeof(int));
+    int* max_ind_data = reinterpret_cast<int*>(max_ind_ptr->ptr());
 
     GetMaxInfo<T><<<blocks, threads, 0, dev_ctx.stream()>>>(x->data<T>(), NC_num, height, width, 2, true, max_val_data, max_ind_data, max_map_data);
 
@@ -81,9 +81,9 @@ class TopPoolGradOpCUDAKernel : public framework::OpKernel<T> {
     auto gpu_place = boost::get<platform::CUDAPlace>(dev_ctx.GetPlace());
     
     int threads = kNumCUDAThreads;
-    size_t NC_num = x_dims[0] * x_dims[1];
-    size_t height = x_dims[2];
-    size_t width = x_dims[3];
+    int NC_num = x_dims[0] * x_dims[1];
+    int height = x_dims[2];
+    int width = x_dims[3];
     int grad_num = in_grad->numel();
     int blocks = NumBlocks(grad_num);
     FillConstant<T><<<blocks, threads, 0, dev_ctx.stream()>>>(in_grad_data, 0, grad_num);

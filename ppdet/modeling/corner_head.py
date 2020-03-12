@@ -25,15 +25,9 @@ from ppdet.core.workspace import register
 import cornerpool_lib
 import numpy as np
 
-__all__ = ['CornerHead']
+__all__ = ['CornerHead', 'CenterHead']
 
-
-def corner_pool(x, dim, pool1, pool2, name=None):
-    p1_conv1 = _conv_norm(x, 3, 128, pad=1, act='relu', name=name + '_p1_conv1')
-    pool1 = pool1(p1_conv1, name=name + '_pool1')
-    p2_conv1 = _conv_norm(x, 3, 128, pad=1, act='relu', name=name + '_p2_conv1')
-    pool2 = pool2(p2_conv1, name=name + '_pool2')
-
+def corner_output(x, pool1, pool2, dim, name=None):
     p_conv1 = fluid.layers.conv2d(
         pool1 + pool2,
         filter_size=3,
@@ -51,6 +45,7 @@ def corner_pool(x, dim, pool1, pool2, name=None):
         moving_mean_name=name + '_p_bn1_running_mean',
         moving_variance_name=name + '_p_bn1_running_var',
         name=name + '_p_bn1')
+
     conv1 = fluid.layers.conv2d(
         x,
         filter_size=1,
@@ -69,6 +64,67 @@ def corner_pool(x, dim, pool1, pool2, name=None):
 
     relu1 = fluid.layers.relu(p_bn1 + bn1)
     conv2 = _conv_norm(relu1, 3, dim, pad=1, act='relu', name=name + '_conv2')
+    return conv2
+
+def cascade_corner_pool(x, dim, pool1, pool2, name=None):
+    # pool1
+    look_conv1 = _conv_norm(x, 3, 128, pad=1, act='relu', name=name + '_look_conv1')
+    p1_conv1 = _conv_norm(x, 3, 128, pad=1, act='relu', name=name + '_p1_conv1')
+    look_right = pool2(p1_conv1, name=name + '_look_right')
+    P1_look_conv = fluid.layers.conv2d(
+        p1_conv1+look_right,
+        filter_size=3,
+        num_filters=128,
+        padding=1,
+        param_attr=ParamAttr(
+            name=name + "_P1_look_conv_weight",
+            initializer=kaiming_init(p1_conv1+look_right, 3)),
+        bias_attr=False,
+        name=name + '_P1_look_conv')
+    pool1_ = pool1(P1_look_conv, name='_pool1')
+
+    # pool2
+    look_conv2 = _conv_norm(x, 3, 128, pad=1, act='relu', name=name + '_look_conv2')
+    p2_conv1 = _conv_norm(x, 3, 128, pad=1, act='relu', name=name + '_p2_conv1')
+    look_down = pool1(p2_conv1, name=name + '_look_down')
+    P2_look_conv = fluid.layers.conv2d(
+        p2_conv1+look_down,
+        filter_size=3,
+        num_filters=128,
+        padding=1,
+        param_attr=ParamAttr(
+            name=name + "_P2_look_conv_weight",
+            initializer=kaiming_init(p2_conv1+look_down, 3)),
+        bias_attr=False,
+        name=name + '_P1_look_conv')
+    pool2_ = pool2(P2_look_conv, name='_pool2')
+
+    conv2 = corner_output(x, pool1_, pool2_, dim, name)
+    return conv2
+
+
+def pool_cross(x, dim, pool1, pool2, pool3, pool4, name=None):
+    # pool1
+    p1_conv1 = _conv_norm(x, 3, 128, pad=1, act='relu', name=name + '_p1_conv1')
+    pool1_ = pool1(p1_conv1, name=name + '_pool1')
+    pool1_ = pool3(pool1_, name=name + '_pool3')
+    
+    # pool2
+    p2_conv1 = _conv_norm(x, 3, 128, pad=1, act='relu', name=name + '_p2_conv1')
+    pool2_ = pool2(p2_conv1, name=name + '_pool2')
+    pool2_ = pool4(pool2_, name=name + '_pool4')
+    
+    # pool1 + pool2
+    conv2 = corner_output(x, pool1_, pool2_, dim, name)
+    return conv2    
+
+def corner_pool(x, dim, pool1, pool2, name=None):
+    p1_conv1 = _conv_norm(x, 3, 128, pad=1, act='relu', name=name + '_p1_conv1')
+    pool1 = pool1(p1_conv1, name=name + '_pool1')
+    p2_conv1 = _conv_norm(x, 3, 128, pad=1, act='relu', name=name + '_p2_conv1')
+    pool2 = pool2(p2_conv1, name=name + '_pool2')
+
+    conv2 = corner_output(x, pool1, pool2, dim, name)
     return conv2
 
 
@@ -264,12 +320,6 @@ class CornerHead(object):
         return conv1
 
     def get_output(self, input):
-        tl_heats = []
-        br_heats = []
-        tl_tags = []
-        br_tags = []
-        tl_offs = []
-        br_offs = []
         for ind in range(self.stack):
             cnv = input[ind]
             tl_modules = corner_pool(
@@ -474,3 +524,120 @@ class CornerHead(object):
         return decode(tl_heat, br_heat, tl_tag, br_tag, tl_off, br_off,
                       self.ae_threshold, self.num_dets, self.K,
                       self.test_batch_size)
+
+@register
+class CenterHead(CornerHead):
+    __shared__ = ['num_classes', 'stack']
+    
+    def __init__(self, train_batch_size, test_batch_size=1,
+                 num_classes=80, stack=2):
+        super(CenterHead, self).__init__(train_batch_size, test_batch_size=test_batch_size, num_classes=num_classes, stack=stack)
+        self.ct_heats = []
+        self.ct_offs = []
+
+    def get_output(self, input):
+        for ind in range(self.stack):
+            cnv = input[ind]
+            tl_modules = cascade_corner_pool(
+                cnv, 256, cornerpool_lib.top_pool,
+                cornerpool_lib.left_pool, name='tl_modules_' + str(ind))
+            br_modules = cascade_corner_pool(
+                cnv, 256, cornerpool_lib.bottom_pool,
+                cornerpool_lib.right_pool, name='br_modules_' + str(ind))
+            ct_modules = pool_cross(
+                cnv, 256, cornerpool_lib.top_pool,
+                cornerpool_lib.left_pool, cornerpool_lib.bottom_pool,
+                cornerpool_lib.right_pool, name='br_modules_' + str(ind))
+            
+            tl_heat = self.pred_mod(
+                tl_modules, self.num_classes, name='tl_heats_' + str(ind))
+            br_heat = self.pred_mod(
+                br_modules, self.num_classes, name='br_heats_' + str(ind))
+            ct_heat = self.pred_mod(
+                ct_modules, self.num_classes, name='br_heats_' + str(ind))
+
+            tl_tag = self.pred_mod(tl_modules, 1, name='tl_tags_' + str(ind))
+            br_tag = self.pred_mod(br_modules, 1, name='br_tags_' + str(ind))
+
+            tl_off = self.pred_mod(tl_modules, 2, name='tl_offs_' + str(ind))
+            br_off = self.pred_mod(br_modules, 2, name='br_offs_' + str(ind))
+            ct_off = self.pred_mod(ct_modules, 2, name='ct_offs_' + str(ind))
+
+            self.tl_heats.append(tl_heat)
+            self.br_heats.append(br_heat)
+            self.ct_heats.append(ct_heat)
+
+            self.tl_tags.append(tl_tag)
+            self.br_tags.append(br_tag)
+
+            self.tl_offs.append(tl_off)
+            self.br_offs.append(br_off)
+            self.ct_offs.append(ct_off)
+
+    def get_loss(self, targets):
+        gt_tl_heat = targets['tl_heatmaps']
+        gt_br_heat = targets['br_heatmaps']
+        gt_ct_heat = targets['ct_heatmaps']
+        gt_masks = targets['tag_masks']
+        gt_tl_off = targets['tl_regrs']
+        gt_br_off = targets['br_regrs']
+        gt_ct_off = targets['ct_regrs']
+        gt_tl_ind = targets['tl_tags']
+        gt_br_ind = targets['br_tags']
+        gt_ct_ind = targets['ct_tags']
+        gt_masks = fluid.layers.cast(gt_masks, 'float32')
+
+        focal_loss = 0
+        focal_loss_ = self.focal_loss(self.tl_heats, gt_tl_heat, gt_masks)
+        focal_loss += focal_loss_
+        focal_loss_ = self.focal_loss(self.br_heats, gt_br_heat, gt_masks)
+        focal_loss += focal_loss_
+        focal_loss_ = self.focal_loss(self.ct_heats, gt_ct_heat, gt_masks)
+        focal_loss += focal_loss_
+
+        pull_loss = 0
+        push_loss = 0
+
+        ones = fluid.layers.assign(np.array([1], dtype='float32'))
+        tl_tags = [
+            mask_feat(tl_tag, gt_tl_ind, self.train_batch_size)
+            for tl_tag in self.tl_tags
+        ]
+        br_tags = [
+            mask_feat(br_tag, gt_br_ind, self.train_batch_size)
+            for br_tag in self.br_tags
+        ]
+
+        pull_loss, push_loss = 0, 0
+
+        for tl_tag, br_tag in zip(tl_tags, br_tags):
+            pull, push = self.ae_loss(tl_tag, br_tag, gt_masks)
+            pull_loss += pull
+            push_loss += push
+
+        tl_offs = [
+            mask_feat(tl_off, gt_tl_ind, self.train_batch_size)
+            for tl_off in self.tl_offs
+        ]
+        br_offs = [
+            mask_feat(br_off, gt_br_ind, self.train_batch_size)
+            for br_off in self.br_offs
+        ]
+        ct_offs = [
+            mask_feat(ct_off, gt_ct_ind, self.train_batch_size)
+            for ct_off in self.ct_offs
+        ]
+         
+        off_loss = 0
+        for tl_off, br_off, ct_off in zip(tl_offs, br_offs, ct_offs):
+            off_loss += self.off_loss(tl_off, gt_tl_off, gt_masks)
+            off_loss += self.off_loss(br_off, gt_br_off, gt_masks)
+            off_loss += self.off_loss(ct_off, gt_ct_off, gt_masks)
+
+        pull_loss = self.pull_weight * pull_loss
+        push_loss = self.push_weight * push_loss
+
+        loss = (
+            focal_loss + pull_loss + push_loss + off_loss) / len(self.tl_heats)
+        return {'loss': loss}
+

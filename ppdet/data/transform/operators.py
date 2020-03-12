@@ -1736,3 +1736,126 @@ class CornerRatio(BaseOperator):
         sample['ratios'] = np.array([height_ratio, width_ratio])
 
         return sample
+
+
+@register_op
+class CenterTarget(CornerTarget):
+    """
+    Generate targets for CenterNet by ground truth data. 
+    Args:
+        output_size (int): the size of output heatmaps.
+        num_classes (int): num of classes.
+        gaussian_bump (bool): whether to apply gaussian bump on gt targets.
+            True by default.
+        gaussian_rad (int): radius of gaussian bump. If it is set to -1, the 
+            radius will be calculated by iou. -1 by default.
+        gaussian_iou (float): the threshold iou of predicted bbox to gt bbox. 
+            If the iou is larger than threshold, the predicted bboox seems as
+            positive sample. 0.3 by default
+        max_tag_len (int): max num of gt box per image.
+    """
+
+    def __init__(self,
+                 output_size,
+                 num_classes,
+                 gaussian_bump=True,
+                 gaussian_rad=-1,
+                 gaussian_iou=0.3,
+                 max_tag_len=128):
+        super(CenterTarget, self).__init__(output_size,
+            num_classes, gaussian_bump=gaussian_bump, gaussian_rad=gaussian_rad,
+            gaussian_iou=gaussian_iou, max_tag_len=max_tag_len)
+
+    def __call__(self, sample, context=None):
+        tl_heatmaps = np.zeros(
+            (self.num_classes, self.output_size[0], self.output_size[1]),
+            dtype=np.float32)
+        br_heatmaps = np.zeros(
+            (self.num_classes, self.output_size[0], self.output_size[1]),
+            dtype=np.float32)
+        ct_heatmaps = np.zeros(
+            (self.num_classes, self.output_size[0], self.output_size[1]),
+            dtype=np.float32)
+
+        tl_regrs = np.zeros((self.max_tag_len, 2), dtype=np.float32)
+        br_regrs = np.zeros((self.max_tag_len, 2), dtype=np.float32)
+        ct_regrs = np.zeros((self.max_tag_len, 2), dtype=np.float32)
+        tl_tags = np.zeros((self.max_tag_len), dtype=np.int64)
+        br_tags = np.zeros((self.max_tag_len), dtype=np.int64)
+        ct_tags = np.zeros((self.max_tag_len), dtype=np.int64)
+        tag_masks = np.zeros((self.max_tag_len), dtype=np.uint8)
+        tag_lens = np.zeros((), dtype=np.int32)
+        tag_nums = np.zeros((1), dtype=np.int32)
+
+        gt_bbox = sample['gt_bbox']
+        gt_class = sample['gt_class']
+        keep_inds  = ((gt_bbox[:, 2] - gt_bbox[:, 0]) > 0) & \
+                ((gt_bbox[:, 3] - gt_bbox[:, 1]) > 0)
+        gt_bbox = gt_bbox[keep_inds]
+        gt_class = gt_class[keep_inds]
+        sample['gt_bbox'] = gt_bbox
+        sample['gt_class'] = gt_class
+        width_ratio = self.output_size[1] / sample['w']
+        height_ratio = self.output_size[0] / sample['h']
+        for i in range(gt_bbox.shape[0]):
+            width = gt_bbox[i][2] - gt_bbox[i][0]
+            height = gt_bbox[i][3] - gt_bbox[i][1]
+
+            xtl, ytl = gt_bbox[i][0], gt_bbox[i][1]
+            xbr, ybr = gt_bbox[i][2], gt_bbox[i][3]
+            xct, yct = (gt_bbox[i][2] + gt_bbox[i][0])/2, (gt_bbox[i][3] + gt_bbox[i][1])/2
+
+            fxtl = (xtl * width_ratio)
+            fytl = (ytl * height_ratio)
+            fxbr = (xbr * width_ratio)
+            fybr = (ybr * height_ratio)
+            fxct = (xct * width_ratio)
+            fyct = (yct * height_ratio)
+
+            xtl = int(fxtl)
+            ytl = int(fytl)
+            xbr = int(fxbr)
+            ybr = int(fybr)
+            xct = int(fxct)
+            yct = int(fyct)
+           
+            if self.gaussian_bump:
+                width = math.ceil(width * width_ratio)
+                height = math.ceil(height * height_ratio)
+                if self.gaussian_rad == -1:
+                    radius = gaussian_radius((height, width), self.gaussian_iou)
+                    radius = max(0, int(radius))
+                else:
+                    radius = self.gaussian_rad
+                draw_gaussian(tl_heatmaps[gt_class[i][0]], [xtl, ytl], radius)
+                draw_gaussian(br_heatmaps[gt_class[i][0]], [xbr, ybr], radius)
+                draw_gaussian(ct_heatmaps[gt_class[i][0]], [xct, yct], radius, delte=5)
+            else:
+                tl_heatmaps[gt_class[i][0], ytl, xtl] = 1
+                br_heatmaps[gt_class[i][0], ybr, xbr] = 1
+                ct_heatmaps[gt_class[i][0], yct, xct] = 1
+
+            tl_regrs[i, :] = [fxtl - xtl, fytl - ytl]
+            br_regrs[i, :] = [fxbr - xbr, fybr - ybr]
+            ct_regrs[i, :] = [fxct - xct, fyct - yct]
+            tl_tags[tag_lens] = ytl * self.output_size[1] + xtl
+            br_tags[tag_lens] = ybr * self.output_size[1] + xbr
+            ct_tags[tag_lens] = yct * self.output_size[1] + xct
+            tag_lens += 1
+
+        tag_masks[:tag_lens] = 1
+
+        sample['tl_heatmaps'] = tl_heatmaps
+        sample['br_heatmaps'] = br_heatmaps
+        sample['ct_heatmaps'] = ct_heatmaps
+        sample['tl_regrs'] = tl_regrs
+        sample['br_regrs'] = br_regrs
+        sample['ct_regrs'] = ct_regrs
+        sample['tl_tags'] = tl_tags
+        sample['br_tags'] = br_tags
+        sample['ct_tags'] = ct_tags
+        sample['tag_masks'] = tag_masks
+
+        return sample
+
+

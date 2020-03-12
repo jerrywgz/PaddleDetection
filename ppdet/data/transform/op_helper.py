@@ -412,9 +412,9 @@ def gaussian_radius(bbox_size, min_overlap):
     return min(radius1, radius2, radius3)
 
 
-def draw_gaussian(heatmap, center, radius, k=1):
+def draw_gaussian(heatmap, center, radius, k=1, delte=6):
     diameter = 2 * radius + 1
-    gaussian = gaussian2D((diameter, diameter), sigma=diameter / 6)
+    gaussian = gaussian2D((diameter, diameter), sigma=diameter / delte)
 
     x, y = center
 

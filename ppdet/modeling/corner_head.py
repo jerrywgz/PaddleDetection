@@ -547,14 +547,14 @@ class CenterHead(CornerHead):
             ct_modules = pool_cross(
                 cnv, 256, cornerpool_lib.top_pool,
                 cornerpool_lib.left_pool, cornerpool_lib.bottom_pool,
-                cornerpool_lib.right_pool, name='br_modules_' + str(ind))
+                cornerpool_lib.right_pool, name='ct_modules_' + str(ind))
             
             tl_heat = self.pred_mod(
                 tl_modules, self.num_classes, name='tl_heats_' + str(ind))
             br_heat = self.pred_mod(
                 br_modules, self.num_classes, name='br_heats_' + str(ind))
             ct_heat = self.pred_mod(
-                ct_modules, self.num_classes, name='br_heats_' + str(ind))
+                ct_modules, self.num_classes, name='ct_heats_' + str(ind))
 
             tl_tag = self.pred_mod(tl_modules, 1, name='tl_tags_' + str(ind))
             br_tag = self.pred_mod(br_modules, 1, name='br_tags_' + str(ind))
@@ -641,3 +641,39 @@ class CenterHead(CornerHead):
             focal_loss + pull_loss + push_loss + off_loss) / len(self.tl_heats)
         return {'loss': loss}
 
+    def get_prediction(self, input):
+        ind = self.stack - 1
+        tl_modules = cascade_corner_pool(
+            input,
+            256,
+            cornerpool_lib.top_pool,
+            cornerpool_lib.left_pool,
+            name='tl_modules_' + str(ind))
+        br_modules = cascade_corner_pool(
+            input,
+            256,
+            cornerpool_lib.bottom_pool,
+            cornerpool_lib.right_pool,
+            name='br_modules_' + str(ind))
+        ct_modules = pool_cross(
+            cnv, 256, cornerpool_lib.top_pool,
+            cornerpool_lib.left_pool, cornerpool_lib.bottom_pool,
+            cornerpool_lib.right_pool, name='ct_modules_' + str(ind))
+
+        tl_heat = self.pred_mod(
+            tl_modules, self.num_classes, name='tl_heats_' + str(ind))
+        br_heat = self.pred_mod(
+            br_modules, self.num_classes, name='br_heats_' + str(ind))
+        ct_heat = self.pred_mod(
+            ct_modules, self.num_classes, name='ct_heats_' + str(ind))
+
+        tl_tag = self.pred_mod(tl_modules, 1, name='tl_tags_' + str(ind))
+        br_tag = self.pred_mod(br_modules, 1, name='br_tags_' + str(ind))
+
+        tl_off = self.pred_mod(tl_modules, 2, name='tl_offs_' + str(ind))
+        br_off = self.pred_mod(br_modules, 2, name='br_offs_' + str(ind))
+        ct_off = self.pred_mod(ct_modules, 2, name='ct_offs_' + str(ind))
+
+        return decode(tl_heat, br_heat, tl_tag, br_tag, tl_off, br_off,
+                      self.ae_threshold, self.num_dets, self.K,
+                      self.test_batch_size, ct_modules=ct_heat, ct_off=ct_off)

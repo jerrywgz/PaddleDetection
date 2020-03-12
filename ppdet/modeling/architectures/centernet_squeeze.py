@@ -95,10 +95,56 @@ class CenterNetSqueeze(CornerNetSqueeze):
         # yapf: enable
         return inputs_def
 
-    def train(self, feed_vars):
-        self.target_vars = [
-            'tl_heatmaps', 'br_heatmaps', 'ct_heatmaps', 'tag_masks', 'tl_regrs',
-            'br_regrs', 'ct_regrs', 'tl_tags', 'br_tags', 'ct_tags'
-        ]
-        return self.build(feed_vars, mode='train')
+    def build(self, feed_vars, mode='train'):
+        im = feed_vars['image']
+        body_feats = self.backbone(im)
+        if self.fpn is not None:
+            body_feats, _ = self.fpn.get_output(body_feats)
+            body_feats = [body_feats.values()[-1]]
+        if mode == 'train':
+            target_vars = [
+              'tl_heatmaps', 'br_heatmaps', 'ct_heatmaps', 'tag_masks', 'tl_regrs',
+              'br_regrs', 'ct_regrs', 'tl_tags', 'br_tags', 'ct_tags'
+            ]
+            target = {key: feed_vars[key] for key in target_vars}
+            self.corner_head.get_output(body_feats)
+            loss = self.corner_head.get_loss(target)
+            return loss
+
+        elif mode == 'test':
+            ratios = feed_vars['ratios']
+            borders = feed_vars['borders']
+            bboxes, scores, tl_scores, br_scores, clses = self.center_head.get_prediction(
+                body_feats[-1])
+            bboxes = rescale_bboxes(bboxes, ratios, borders, im)
+            detections = fluid.layers.concat(
+                [bboxes, scores, tl_scores, br_scores, clses], axis=2)
+            scores = fluid.layers.squeeze(scores, axes=[0, 2])
+            detections = detections[0]
+
+            keep_inds = fluid.layers.squeeze(
+                fluid.layers.where(scores > -1), axes=[-1])
+            inds_shape = fluid.layers.shape(keep_inds)
+            inds_size = fluid.layers.reduce_prod(inds_shape)
+            size = fluid.layers.fill_constant([1], value=1, dtype='int32')
+            cond = inds_size < size
+            total_res = fluid.layers.create_global_var(
+                shape=[1],
+                value=0.0,
+                dtype='float32',
+                persistable=False,
+                name='total_res')
+            with fluid.layers.control_flow.Switch() as switch:
+                with switch.case(cond):
+                    fluid.layers.assign(
+                        input=np.array([]).astype('float32'), output=total_res)
+                with switch.default():
+                    detections = fluid.layers.gather(detections, keep_inds)
+                    total_out = self.nms(detections[:, :4], detections[:, 4],
+                                         detections[:, -1])
+                    fluid.layers.assign(input=total_out, output=total_res)
+
+            return {'bbox': total_res}
+   
+
 

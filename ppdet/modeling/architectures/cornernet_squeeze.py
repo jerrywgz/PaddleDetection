@@ -81,7 +81,11 @@ class CornerNetSqueeze(object):
             body_feats, _ = self.fpn.get_output(body_feats)
             body_feats = [body_feats.values()[-1]]
         if mode == 'train':
-            target = {key: feed_vars[key] for key in self.target_vars}
+            target_vars = [
+                'tl_heatmaps', 'br_heatmaps', 'tag_masks', 'tl_regrs',
+                'br_regrs', 'tl_tags', 'br_tags'
+            ]
+            target = {key: feed_vars[key] for key in target_vars}
             self.corner_head.get_output(body_feats)
             loss = self.corner_head.get_loss(target)
             return loss
@@ -169,10 +173,6 @@ class CornerNetSqueeze(object):
         return feed_vars, loader
 
     def train(self, feed_vars):
-        self.target_vars = [
-            'tl_heatmaps', 'br_heatmaps', 'tag_masks', 'tl_regrs',
-            'br_regrs', 'tl_tags', 'br_tags'
-        ]
         return self.build(feed_vars, mode='train')
 
     def eval(self, feed_vars):

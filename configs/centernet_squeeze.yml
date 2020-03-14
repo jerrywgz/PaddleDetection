@@ -103,7 +103,7 @@ EvalReader:
     !COCODataSet
       image_dir: val2017
       anno_path: annotations/instances_val2017.json
-      dataset_dir: ../coco
+      dataset_dir: /paddle/wangguanzhong/data/coco
       with_background: false
   sample_transforms:
   - !DecodeImage
@@ -122,6 +122,7 @@ EvalReader:
     is_channel_first: True
   batch_size: 1
   drop_empty: false
+  use_process: false
 
 TestReader:
   inputs_def:

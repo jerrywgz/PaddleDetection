@@ -29,10 +29,7 @@ __all__ = ['CornerNetSqueeze']
 
 def rescale_bboxes(bboxes, ratios, borders, im):
     shape = fluid.layers.cast(fluid.layers.shape(im), 'float32')
-    x1 = bboxes[:, :, 0:1]
-    y1 = bboxes[:, :, 1:2]
-    x2 = bboxes[:, :, 2:3]
-    y2 = bboxes[:, :, 3:4]
+    x1, y1, x2, y2 = fluid.layers.split(bboxes, 4)
     x1 = x1 / ratios[:, 1] - borders[:, 2]
     zero = fluid.layers.assign(np.array([0], dtype='float32'))
     x1 = fluid.layers.elementwise_max(x1, zero)

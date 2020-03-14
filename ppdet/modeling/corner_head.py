@@ -179,7 +179,9 @@ def decode(tl_heat,
            ae_threshold=1,
            num_dets=1000,
            K=100,
-           batch_size=1):
+           batch_size=1,
+           ct_heat=None,
+           ct_off=None):
     shape = fluid.layers.shape(tl_heat)
     H, W = shape[2], shape[3]
 
@@ -193,7 +195,6 @@ def decode(tl_heat,
                                                        H, W, K)
     br_scores, br_inds, br_clses, br_ys, br_xs = _topk(br_heat_nms, batch_size,
                                                        H, W, K)
-
     tl_ys = fluid.layers.expand(
         fluid.layers.reshape(tl_ys, [-1, K, 1]), [1, 1, K])
     tl_xs = fluid.layers.expand(
@@ -212,6 +213,20 @@ def decode(tl_heat,
     tl_ys = tl_ys + tl_regr[:, :, :, 1]
     br_xs = br_xs + br_regr[:, :, :, 0]
     br_ys = br_ys + br_regr[:, :, :, 1]
+
+    if ct_heat is not None:
+        ct_heat_nms = nms(ct_heat)
+        ct_scores, ct_inds, ct_clses, ct_ys, ct_xs = _topk(ct_heat_nms, batch_size,
+                                                       H, W, K) 
+        ct_ys = fluid.layers.expand(
+            fluid.layers.reshape(ct_ys, [-1, 1, K]), [1, K, 1])
+        ct_xs = fluid.layers.expand(
+            fluid.layers.reshape(ct_xs, [-1, 1, K]), [1, K, 1])
+        ct_regr = mask_feat(ct_off, ct_inds, batch_size)
+        ct_regr = fluid.layers.reshape(ct_regr, [-1, K, 1, 2])
+        ct_xs = ct_xs + ct_regr[:, :, :, 0]
+        ct_ys = ct_ys + ct_regr[:, :, :, 1]
+
     bboxes = fluid.layers.stack([tl_xs, tl_ys, br_xs, br_ys], axis=-1)
 
     tl_tag = mask_feat(tl_tag, tl_inds, batch_size)
@@ -256,8 +271,14 @@ def decode(tl_heat,
     br_scores = fluid.layers.reshape(br_scores, [batch_size, -1, 1])
     br_scores = gather_feat(br_scores, inds, batch_size)
 
+
     bboxes = fluid.layers.cast(bboxes, 'float32')
     clses = fluid.layers.cast(clses, 'float32')
+    if ct_heat is not None:
+        ct_xs = ct_xs[:, 0, :]
+        ct_ys = ct_ys[:, 0, :]
+
+        return bboxes, scores, tl_scores, br_scores, clses, ct_xs, ct_ys, ct_clses, ct_scores
     return bboxes, scores, tl_scores, br_scores, clses
 
 
@@ -656,7 +677,7 @@ class CenterHead(CornerHead):
             cornerpool_lib.right_pool,
             name='br_modules_' + str(ind))
         ct_modules = pool_cross(
-            cnv, 256, cornerpool_lib.top_pool,
+            input, 256, cornerpool_lib.top_pool,
             cornerpool_lib.left_pool, cornerpool_lib.bottom_pool,
             cornerpool_lib.right_pool, name='ct_modules_' + str(ind))
 
@@ -676,4 +697,4 @@ class CenterHead(CornerHead):
 
         return decode(tl_heat, br_heat, tl_tag, br_tag, tl_off, br_off,
                       self.ae_threshold, self.num_dets, self.K,
-                      self.test_batch_size, ct_modules=ct_heat, ct_off=ct_off)
+                      self.test_batch_size, ct_heat=ct_heat, ct_off=ct_off)

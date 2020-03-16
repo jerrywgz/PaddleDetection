@@ -551,8 +551,8 @@ class CenterHead(CornerHead):
     __shared__ = ['num_classes', 'stack']
     
     def __init__(self, train_batch_size, test_batch_size=1,
-                 num_classes=80, stack=2):
-        super(CenterHead, self).__init__(train_batch_size, test_batch_size=test_batch_size, num_classes=num_classes, stack=stack)
+                 num_classes=80, stack=2, ae_threshold=0.5, top_k=70):
+        super(CenterHead, self).__init__(train_batch_size, test_batch_size=test_batch_size, num_classes=num_classes, stack=stack, ae_threshold=ae_threshold, top_k=top_k)
         self.ct_heats = []
         self.ct_offs = []
 

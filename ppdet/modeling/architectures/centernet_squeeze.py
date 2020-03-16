@@ -142,14 +142,12 @@ class CenterNetSqueeze(CornerNetSqueeze):
             ct_clses = fluid.layers.squeeze(ct_clses, axes=[0])
             ct_scores = fluid.layers.squeeze(ct_scores, axes=[0])
             detections = detections[0]
-
-            keep_inds = fluid.layers.squeeze(
-                fluid.layers.where(scores > -1), axes=[-1])
+            keep_inds = fluid.layers.where(scores > -1)
             inds_shape = fluid.layers.shape(keep_inds)
             inds_size = fluid.layers.reduce_prod(inds_shape)
             cond = inds_size < 1 
             valid_res = fluid.layers.create_global_var(
-                shape=[1,6],
+                shape=[1,8],
                 value=0.0,
                 dtype='float32',
                 persistable=False,
@@ -180,7 +178,7 @@ class CenterNetSqueeze(CornerNetSqueeze):
                     fluid.layers.assign(
                         input=np.zeros((1,8)).astype('float32')-1, output=s_detection)
                 with switch.default():
-                    valid_detections = fluid.layers.gather(detections, s_inds)
+                    valid_detections = fluid.layers.gather(valid_res, s_inds)
                     fluid.layers.assign(input=valid_detections, output=s_detection)
 
             inds_shape = fluid.layers.shape(l_inds)
@@ -197,7 +195,7 @@ class CenterNetSqueeze(CornerNetSqueeze):
                     fluid.layers.assign(
                         input=np.zeros((1,8)).astype('float32')-1, output=l_detection)
                 with switch.default():
-                    valid_detections = fluid.layers.gather(detections, l_inds)
+                    valid_detections = fluid.layers.gather(valid_res, l_inds)
                     fluid.layers.assign(input=valid_detections, output=l_detection)
 
             s_left_x = (2*s_detection[:,0] + s_detection[:,2])/3
@@ -210,9 +208,9 @@ class CenterNetSqueeze(CornerNetSqueeze):
             ind_rx = fluid.layers.cast((ct_xs - fluid.layers.expand(fluid.layers.unsqueeze(s_right_x, axes=0), pts_num)) < 0, 'int32')
             ind_ty = fluid.layers.cast((ct_ys - fluid.layers.expand(fluid.layers.unsqueeze(s_top_y, axes=0), pts_num)) > 0, 'int32')
             ind_by = fluid.layers.cast((ct_ys - fluid.layers.expand(fluid.layers.unsqueeze(s_bottom_y, axes=0), pts_num)) < 0 , 'int32')
-            ind_cls = fluid.layers.cast((ct_clses - fluid.layers.expand(fluid.layers.unsqueeze(s_detection[:, -1], axes=0), pts_num)) == 0, 'int32')
-
+            ind_cls = fluid.layers.cast((ct_clses - fluid.layers.expand(fluid.layers.unsqueeze(s_detection[:,-1], axes=0), pts_num)) == 0, 'int32')
             ind_ct = ind_lx+ind_rx+ind_ty+ind_by+ind_cls
+
             ind_s_new_score = fluid.layers.reduce_max(ind_ct, dim=0)==5
             ind_s_new = fluid.layers.where(ind_s_new_score)
             inds_shape = fluid.layers.shape(ind_s_new)
@@ -243,17 +241,16 @@ class CenterNetSqueeze(CornerNetSqueeze):
     
                     fluid.layers.assign(input=valid_detections, output=new_s_detection)
 
-
-            l_left_x = (3*l_detection[:,0] + 2*l_detection[:,2])/5
-            l_right_x = (2*l_detection[:,0] + 3*l_detection[:,2])/5
-            l_top_y = (3*l_detection[:,1] + 2*l_detection[:,3])/5
-            l_bottom_y = (2*l_detection[:,1] + 3*l_detection[:,3])/5
+            l_left_x = (2*l_detection[:,0] + l_detection[:,2])/3
+            l_right_x = (l_detection[:,0] + 2*l_detection[:,2])/3
+            l_top_y = (2*l_detection[:,1] + l_detection[:,3])/3
+            l_bottom_y = (l_detection[:,1]+2*l_detection[:,3])/3           
 
             ind_lx = fluid.layers.cast((ct_xs - fluid.layers.expand(fluid.layers.unsqueeze(l_left_x, axes=0), pts_num)) > 0, 'int32')
             ind_rx = fluid.layers.cast((ct_xs - fluid.layers.expand(fluid.layers.unsqueeze(l_right_x, axes=0), pts_num)) < 0, 'int32')
             ind_ty = fluid.layers.cast((ct_ys - fluid.layers.expand(fluid.layers.unsqueeze(l_top_y, axes=0), pts_num)) > 0, 'int32')
             ind_by = fluid.layers.cast((ct_ys - fluid.layers.expand(fluid.layers.unsqueeze(l_bottom_y, axes=0), pts_num)) < 0 , 'int32')
-            ind_cls = fluid.layers.cast((ct_clses - fluid.layers.expand(fluid.layers.unsqueeze(l_detection[:, -1], axes=0), pts_num)) == 0, 'int32')
+            ind_cls = fluid.layers.cast((ct_clses - fluid.layers.expand(fluid.layers.unsqueeze(l_detection[:,-1], axes=0), pts_num)) == 0, 'int32')
 
             ind_ct = ind_lx+ind_rx+ind_ty+ind_by+ind_cls
             ind_l_new_score = fluid.layers.reduce_max(ind_ct, dim=0)==5
@@ -287,7 +284,6 @@ class CenterNetSqueeze(CornerNetSqueeze):
 
             new_detections = fluid.layers.concat([new_s_detection, new_l_detection], axis=0)
             scores = new_detections[:, 4]
-            
             keep_inds = fluid.layers.squeeze(
                 fluid.layers.where(scores > -1), axes=[-1])
             inds_shape = fluid.layers.shape(keep_inds)

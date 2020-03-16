@@ -97,12 +97,12 @@ TrainReader:
   shuffle: true
   worker_num: 8
   bufsize: 32
-  use_process: 8
+  use_process: true
 
 EvalReader:
   inputs_def:
     image_shape: [3,512,512]
-    fields: ['image', 'gt_bbox', 'gt_class', 'im_shape', 'im_id', 'is_difficult']
+    fields: ['image', 'gt_bbox', 'gt_class', 'im_shape', 'im_id']
   dataset:
     !COCODataSet
     image_dir: val2017

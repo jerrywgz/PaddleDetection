@@ -65,6 +65,7 @@ The backbone models pretrained on ImageNet are available. All backbone models ar
 | SENet154-vd-FPN         | Faster         |     1     |  1.44x  |     3.408      |  42.9  |    -    | [model](https://paddlemodels.bj.bcebos.com/object_detection/faster_rcnn_se154_vd_fpn_s1x.tar) |
 | SENet154-vd-FPN         | Mask           |     1     |  1.44x  |     3.233      |  44.0  |  38.7   | [model](https://paddlemodels.bj.bcebos.com/object_detection/mask_rcnn_se154_vd_fpn_s1x.tar) |
 | ResNet101-vd-FPN            | CascadeClsAware Faster   |     2     |   1x    |     -     |  44.7(softnms)  |    -    | [model](https://paddlemodels.bj.bcebos.com/object_detection/cascade_rcnn_cls_aware_r101_vd_fpn_1x_softnms.tar) |
+| ResNet101-vd-FPN            | CascadeClsAware Faster   |     2     |   1x    |     -     |  46.5(multi-scale test)  |    -    | [model](https://paddlemodels.bj.bcebos.com/object_detection/cascade_rcnn_cls_aware_r101_vd_fpn_1x_softnms.tar) |
 
 ### Deformable ConvNets v2
 
@@ -86,33 +87,36 @@ The backbone models pretrained on ImageNet are available. All backbone models ar
 | CBResNet200-vd-FPN-Nonlocal | Cascade Faster  | c3-c5 |     1     |   2.5x    |     -     |  53.3%(softnms)  |    -    | [model](https://paddlemodels.bj.bcebos.com/object_detection/cascade_rcnn_cbr200_vd_fpn_dcnv2_nonlocal_softnms.tar) |
 
 
-#### Notes:
+**Notes:**
+
 - Deformable ConvNets v2(dcn_v2) reference from [Deformable ConvNets v2](https://arxiv.org/abs/1811.11168).
 - `c3-c5` means adding `dcn` in resnet stage 3 to 5.
 - Detailed configuration file in [configs/dcn](https://github.com/PaddlePaddle/PaddleDetection/tree/master/configs/dcn)
 
 
 ### HRNet
-* See more details in [HRNet model zoo](../configs/hrnet/README.md).
+* See more details in [HRNet model zoo](https://github.com/PaddlePaddle/PaddleDetection/blob/master/configs/hrnet/).
 
 
 ### Res2Net
-* See more details in [Res2Net model zoo](../configs/res2net/README.md).
+* See more details in [Res2Net model zoo](https://github.com/PaddlePaddle/PaddleDetection/blob/master/configs/res2net/).
 
 ### IOU loss
-* GIOU loss and DIOU loss are included now. See more details in [IOU loss model zoo](../configs/iou_loss/README.md).
+* GIOU loss and DIOU loss are included now. See more details in [IOU loss model zoo](https://github.com/PaddlePaddle/PaddleDetection/blob/master/configs/iou_loss/).
 
 ### GCNet
-* See more details in [GCNet model zoo](../configs/gcnet/README.md).
+* See more details in [GCNet model zoo](https://github.com/PaddlePaddle/PaddleDetection/blob/master/configs/gcnet/).
 
 
 ### Group Normalization
+
 | Backbone             | Type           | Image/gpu | Lr schd | Box AP | Mask AP |                           Download                           |
 | :------------------- | :------------- | :-----: | :-----: | :----: | :-----: | :----------------------------------------------------------: |
 | ResNet50-FPN         | Faster         |    2    |   2x    |  39.7  |    -    | [model](https://paddlemodels.bj.bcebos.com/object_detection/faster_rcnn_r50_fpn_gn_2x.tar) |
 | ResNet50-FPN         | Mask           |    1    |   2x    |  40.1  |   35.8  | [model](https://paddlemodels.bj.bcebos.com/object_detection/mask_rcnn_r50_fpn_gn_2x.tar) |
 
-#### Notes:
+**Notes:**
+
 - Group Normalization reference from [Group Normalization](https://arxiv.org/abs/1803.08494).
 - Detailed configuration file in [configs/gn](https://github.com/PaddlePaddle/PaddleDetection/tree/master/configs/gn)
 
@@ -149,13 +153,15 @@ The backbone models pretrained on ImageNet are available. All backbone models ar
 | ResNet34     | 416  |     8     |  270e   |       -        |  81.9  | [model](https://paddlemodels.bj.bcebos.com/object_detection/yolov3_r34_voc.tar) |
 | ResNet34     | 320  |     8     |  270e   |       -        |  80.1  | [model](https://paddlemodels.bj.bcebos.com/object_detection/yolov3_r34_voc.tar) |
 
-#### Notes:
+**Notes:**
+
 - YOLOv3-DarkNet53 performance in paper [YOLOv3](https://arxiv.org/abs/1804.02767) is also provided above, our implements
 improved performance mainly by using L1 loss in bounding box width and height regression, image mixup and label smooth.
 - YOLO v3 is trained in 8 GPU with total batch size as 64 and trained 270 epoches. YOLO v3 training data augmentations: mixup,
 randomly color distortion, randomly cropping, randomly expansion, randomly interpolation method, randomly flippling. YOLO v3 used randomly
 reshaped minibatch in training, inferences can be performed on different image sizes with the same model weights, and we provided evaluation
 results of image size 608/416/320 above. Deformable conv is added on stage 5 of backbone.
+- YOLO v3 enhanced model improves the precision to 43.2 involved with deformable conv, dropblock and IoU loss. See more details in [YOLOv3_ENHANCEMENT](./featured_model/YOLOv3_ENHANCEMENT.md)
 
 ### RetinaNet
 
@@ -188,11 +194,11 @@ results of image size 608/416/320 above. Deformable conv is added on stage 5 of 
 randomly cropping, randomly expansion, randomly flipping.
 
 
-## Face Detection
+### Face Detection
 
-Please refer [face detection models](../configs/face_detection) for details.
+Please refer [face detection models](https://github.com/PaddlePaddle/PaddleDetection/blob/master/configs/face_detection) for details.
 
 
-## Object Detection in Open Images Dataset V5
+### Object Detection in Open Images Dataset V5
 
-Please refer [Open Images Dataset V5 Baseline model](OIDV5_BASELINE_MODEL.md) for details.
+Please refer [Open Images Dataset V5 Baseline model](featured_model/OIDV5_BASELINE_MODEL.md) for details.

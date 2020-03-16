@@ -19,6 +19,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import os
 import sys
 import six
 if six.PY3:
@@ -65,11 +66,16 @@ class ParallelMap(object):
         self._worker_num = worker_num
         self._bufsize = bufsize
         self._use_process = use_process
+        if self._use_process and sys.platform == "win32":
+            logger.info("Use multi-thread reader instead of "
+                        "multi-process reader on Windows.")
+            self._use_process = False
         if self._use_process and type(memsize) is str:
-            assert memsize[-1].lower() == 'g', \
-                "invalid param for memsize[%s], should be ended with 'G' or 'g'" % (memsize)
-            gb = memsize[:-1]
-            self._memsize = int(gb) * 1024**3
+            assert memsize[-1].lower() in ['g', 'm'], \
+                "invalid param for memsize[%s], should be " \
+                "ended with 'G' or 'g' or 'M' or 'm'" % (memsize)
+            power = 3 if memsize[-1].lower() == 'g' else 2
+            self._memsize = int(memsize[:-1]) * (1024**power)
         self._started = False
         self._source = source
         self._worker = worker
@@ -86,10 +92,6 @@ class ParallelMap(object):
     def _setup(self):
         """setup input/output queues and workers """
         use_process = self._use_process
-        if use_process and sys.platform == "win32":
-            logger.info("Use multi-thread reader instead of "
-                        "multi-process reader on Windows.")
-            use_process = False
 
         bufsize = self._bufsize
         if use_process:
@@ -280,3 +282,13 @@ class ParallelMap(object):
 # FIXME(dengkaipeng): fix me if you have better impliment
 # handle terminate reader process, do not print stack frame
 signal.signal(signal.SIGTERM, lambda signum, frame: sys.exit())
+
+
+def _term_group(sig_num, frame):
+    pid = os.getpid()
+    pg = os.getpgid(os.getpid())
+    logger.info("main proc {} exit, kill process group " "{}".format(pid, pg))
+    os.killpg(pg, signal.SIGKILL)
+
+
+signal.signal(signal.SIGINT, _term_group)

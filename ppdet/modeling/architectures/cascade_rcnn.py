@@ -187,7 +187,6 @@ class CascadeRCNN(object):
             # backbone
             body_feats = self.backbone(im)
             result.update(body_feats)
-            body_feat_names = list(body_feats.keys())
 
             # FPN
             if self.fpn is not None:
@@ -312,7 +311,7 @@ class CascadeRCNN(object):
             fields += ms_fields
             self.im_info_names = ['image', 'im_info'] + ms_fields
 
-        feed_vars = OrderedDict([(key, fluid.layers.data(
+        feed_vars = OrderedDict([(key, fluid.data(
             name=key,
             shape=inputs_def[key]['shape'],
             dtype=inputs_def[key]['dtype'],

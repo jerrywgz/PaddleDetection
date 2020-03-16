@@ -78,7 +78,9 @@ def get_extra_info(im, arch, shape, scale):
         logger.info('Extra info: im_size')
         info.append(im_size)
     elif 'SSD' in arch:
-        pass
+        im_shape = np.array([shape[:2]]).astype('int32')
+        logger.info('Extra info: im_shape')
+        info.append([im_shape])
     elif 'RetinaNet' in arch:
         input_shape.extend(im.shape[2:])
         im_info = np.array([input_shape + [scale]]).astype('float32')
@@ -106,10 +108,11 @@ class Resize(object):
         self.max_size = max_size
         self.interp = interp
 
-    def __call__(self, im):
+    def __call__(self, im, arch):
         origin_shape = im.shape[:2]
         im_c = im.shape[2]
-        if self.max_size != 0:
+        scale_set = {'RCNN', 'RetinaNet'}
+        if self.max_size != 0 and arch in scale_set:
             im_size_min = np.min(origin_shape[0:2])
             im_size_max = np.max(origin_shape[0:2])
             im_scale = float(self.target_size) / float(im_size_min)
@@ -130,7 +133,7 @@ class Resize(object):
             fy=im_scale_y,
             interpolation=self.interp)
         # padding im
-        if self.max_size != 0:
+        if self.max_size != 0 and arch in scale_set:
             padding_im = np.zeros(
                 (self.max_size, self.max_size, im_c), dtype=np.float32)
             im_h, im_w = im.shape[:2]
@@ -166,6 +169,24 @@ class Permute(object):
         return im
 
 
+class PadStride(object):
+    def __init__(self, stride=0):
+        assert stride >= 0, "Unsupported stride: {}, the stride in PadStride must be greater or equal to 0".format(
+            stride)
+        self.coarsest_stride = stride
+
+    def __call__(self, im):
+        coarsest_stride = self.coarsest_stride
+        if coarsest_stride == 0:
+            return im
+        im_c, im_h, im_w = im.shape
+        pad_h = int(np.ceil(float(im_h) / coarsest_stride) * coarsest_stride)
+        pad_w = int(np.ceil(float(im_w) / coarsest_stride) * coarsest_stride)
+        padding_im = np.zeros((im_c, pad_h, pad_w), dtype=np.float32)
+        padding_im[:, :im_h, :im_w] = im
+        return padding_im
+
+
 def Preprocess(img_path, arch, config):
     img = DecodeImage(img_path)
     orig_shape = img.shape
@@ -176,7 +197,7 @@ def Preprocess(img_path, arch, config):
         obj = data_aug_conf.pop('type')
         preprocess = eval(obj)(**data_aug_conf)
         if obj == 'Resize':
-            img, scale = preprocess(img)
+            img, scale = preprocess(img, arch)
         else:
             img = preprocess(img)
 
@@ -190,6 +211,7 @@ def Preprocess(img_path, arch, config):
 def infer():
     model_path = FLAGS.model_path
     config_path = FLAGS.config_path
+    res = {}
     assert model_path is not None, "Model path: {} does not exist!".format(
         model_path)
     assert config_path is not None, "Config path: {} does not exist!".format(
@@ -198,6 +220,9 @@ def infer():
         conf = yaml.safe_load(f)
 
     img_data = Preprocess(FLAGS.infer_img, conf['arch'], conf['Preprocess'])
+    if 'SSD' in conf['arch']:
+        img_data, res['im_shape'] = img_data
+        img_data = [img_data]
 
     if conf['use_python_inference']:
         place = fluid.CUDAPlace(0)
@@ -220,7 +245,7 @@ def infer():
     for i in range(10):
         if conf['use_python_inference']:
             outs = exe.run(infer_prog,
-                           feed=[data_dict],
+                           feed=data_dict,
                            fetch_list=fetch_targets,
                            return_numpy=False)
         else:
@@ -232,7 +257,7 @@ def infer():
     for i in range(cnt):
         if conf['use_python_inference']:
             outs = exe.run(infer_prog,
-                           feed=[data_dict],
+                           feed=data_dict,
                            fetch_list=fetch_targets,
                            return_numpy=False)
         else:
@@ -253,7 +278,6 @@ def infer():
         is_bbox_normalized = True if 'SSD' in conf['arch'] else False
 
         out = outs[-1]
-        res = {}
         lod = out.lod() if conf['use_python_inference'] else out.lod
         lengths = offset_to_lengths(lod)
         np_data = np.array(out) if conf[

@@ -324,7 +324,7 @@ class MultiClassSoftNMS(object):
             has_labels = labels is not None
             bboxes = np.array(bboxes)
             scores = np.array(scores)
-            class_nums = scores.shape[-1]
+            class_nums = self.num_classes 
 
             softnms_thres = self.score_threshold
             softnms_sigma = self.softnms_sigma
@@ -332,9 +332,6 @@ class MultiClassSoftNMS(object):
 
             if has_labels:
                 labels = np.array(labels)
-                class_nums = int(labels.max() + 1)
-            else:
-                class_nums = scores.shape[-1]
 
             cls_boxes = [[] for _ in range(class_nums)]
             cls_ids = [[] for _ in range(class_nums)]
@@ -367,7 +364,6 @@ class MultiClassSoftNMS(object):
                 image_thresh = np.sort(image_scores)[-keep_top_k]
                 keep = np.where(cls_boxes[:, 0] >= image_thresh)[0]
                 pred_result = pred_result[keep, :]
-
             res = fluid.LoDTensor()
             res.set_lod([[0, pred_result.shape[0]]])
             if pred_result.shape[0] == 0:

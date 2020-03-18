@@ -70,7 +70,7 @@ def cascade_corner_pool(x, dim, pool1, pool2, name=None):
     # pool1
     look_conv1 = _conv_norm(x, 3, 128, pad=1, act='relu', name=name + '_look_conv1')
     p1_conv1 = _conv_norm(x, 3, 128, pad=1, act='relu', name=name + '_p1_conv1')
-    look_right = pool2(p1_conv1, name=name + '_look_right')
+    look_right = pool2(look_conv1, name=name + '_look_right')
     P1_look_conv = fluid.layers.conv2d(
         p1_conv1+look_right,
         filter_size=3,
@@ -81,12 +81,13 @@ def cascade_corner_pool(x, dim, pool1, pool2, name=None):
             initializer=kaiming_init(p1_conv1+look_right, 3)),
         bias_attr=False,
         name=name + '_P1_look_conv')
+    
     pool1_ = pool1(P1_look_conv, name='_pool1')
 
     # pool2
     look_conv2 = _conv_norm(x, 3, 128, pad=1, act='relu', name=name + '_look_conv2')
     p2_conv1 = _conv_norm(x, 3, 128, pad=1, act='relu', name=name + '_p2_conv1')
-    look_down = pool1(p2_conv1, name=name + '_look_down')
+    look_down = pool1(look_conv2, name=name + '_look_down')
     P2_look_conv = fluid.layers.conv2d(
         p2_conv1+look_down,
         filter_size=3,
@@ -96,7 +97,7 @@ def cascade_corner_pool(x, dim, pool1, pool2, name=None):
             name=name + "_P2_look_conv_weight",
             initializer=kaiming_init(p2_conv1+look_down, 3)),
         bias_attr=False,
-        name=name + '_P1_look_conv')
+        name=name + '_P2_look_conv')
     pool2_ = pool2(P2_look_conv, name='_pool2')
 
     conv2 = corner_output(x, pool1_, pool2_, dim, name)

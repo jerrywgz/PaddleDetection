@@ -23,6 +23,7 @@ from paddle.fluid.initializer import Uniform
 import functools
 from ppdet.core.workspace import register
 from .resnet import ResNet
+import math
 
 __all__ = ['Hourglass']
 
@@ -38,6 +39,7 @@ def _conv_norm(x,
                out_dim,
                stride=1,
                pad=0,
+               groups=None,
                with_bn=True,
                act=None,
                ind=None,
@@ -51,6 +53,7 @@ def _conv_norm(x,
         num_filters=out_dim,
         stride=stride,
         padding=pad,
+        groups=groups,
         param_attr=ParamAttr(
             name=name + conv_name + "_weight", initializer=kaiming_init(x, k)),
         bias_attr=ParamAttr(
@@ -86,6 +89,27 @@ def residual_block(x, out_dim, k=3, stride=1, name=None):
     return fluid.layers.elementwise_add(
         x=skip, y=conv2, act='relu', name=name + "_add")
 
+
+def ghost_module(x, out_dim, ratio=2, stride=1, act=None, name=None):
+    init_channels = int(math.ceil(out_dim / ratio))
+    new_channels = init_channels*(ratio-1)
+    conv1 = _conv_norm(x, 3, init_channels, stride=stride, pad=1, ind=1, act=act, name=name)
+    conv2 = _conv_norm(conv1, 3, new_channels, pad=1, groups=init_channels, ind=2, act=act, name=name)
+    out = fluid.layers.concat([conv1, conv2], axis=1)
+    return out
+
+def ghost_block(x, out_dim, stride=1, name=None):
+    conv1 = ghost_module(x, out_dim, stride=stride, act='relu', name=name+'_pw')
+    if stride == 2:
+        conv1 = _conv_norm(conv1, 3, out_dim, stride=stride, act=None, name=name+'_depthwise_conv')
+    conv2 = ghost_module(x, out_dim, stride=stride, name=name+'_pw_linear')
+    if stride == 1 and x.shape[1] == out_dim:
+        shortcut = x
+    else:
+        dw = _conv_norm(x, 3, x.shape[1], stride=stride, pad=1, groups=x.shape[1], act='relu', name=name+'_shortcut_dw_conv')
+        shortcut = _conv_norm(dw, 1, out_dim, name=name+'_shortcut_conv')
+    return fluid.layers.elementwise_add(
+        x=conv2, y=shortcut, name=name + "_add")
 
 def fire_block(x, out_dim, sr=2, stride=1, name=None):
     conv1 = _conv_norm(x, 1, out_dim // sr, ind=1, name=name)
@@ -130,24 +154,24 @@ def fire_block(x, out_dim, sr=2, stride=1, name=None):
         return fluid.layers.relu(bn2, name="_relu")
 
 
-def make_fire_layer(x, in_dim, out_dim, modules, name=None):
-    layers = fire_block(x, out_dim, name=name + '_0')
+def make_layer(x, in_dim, out_dim, modules, block, name=None):
+    layers = block(x, out_dim, name=name + '_0')
     for i in range(1, modules):
-        layers = fire_block(layers, out_dim, name=name + '_' + str(i))
+        layers = block(layers, out_dim, name=name + '_' + str(i))
     return layers
 
 
-def make_hg_fire_layer(x, in_dim, out_dim, modules, name=None):
-    layers = fire_block(x, out_dim, stride=2, name=name + '_0')
+def make_hg_layer(x, in_dim, out_dim, modules, block, name=None):
+    layers = block(x, out_dim, stride=2, name=name + '_0')
     for i in range(1, modules):
-        layers = fire_block(layers, out_dim, name=name + '_' + str(i))
+        layers = block(layers, out_dim, name=name + '_' + str(i))
     return layers
 
 
-def make_fire_layer_revr(x, in_dim, out_dim, modules, name=None):
+def make_layer_revr(x, in_dim, out_dim, modules, block, name=None):
     for i in range(modules - 1):
-        x = fire_block(x, in_dim, name=name + '_' + str(i))
-    layers = fire_block(x, out_dim, name=name + '_' + str(modules - 1))
+        x = block(x, in_dim, name=name + '_' + str(i))
+    layers = block(x, out_dim, name=name + '_' + str(modules - 1))
     return layers
 
 
@@ -172,14 +196,15 @@ class Hourglass(object):
     Args:
         stack (int): stack of hourglass, 2 by default
         dims (list): dims of each level in hg_module
-        modules (list): num of fire modules in each level
+        modules (list): num of modules in each level
     """
     __shared__ = ['stack']
 
     def __init__(self,
                  stack=2,
                  dims=[256, 256, 384, 384, 512],
-                 modules=[2, 2, 2, 2, 4]):
+                 modules=[2, 2, 2, 2, 4],
+                 block_name='fire'):
         super(Hourglass, self).__init__()
         self.stack = stack
         assert len(dims) == len(modules), \
@@ -188,6 +213,9 @@ class Hourglass(object):
         self.dims = dims
         self.modules = modules
         self.num_level = len(dims) - 1
+        block_dict = {'fire': fire_block,
+                      'ghost': ghost_block}
+        self.block = block_dict[block_name]
 
     def __call__(self, input, name='hg'):
         inter = self.pre(input, name + '_pre')
@@ -225,20 +253,20 @@ class Hourglass(object):
                   n=4,
                   dims=[256, 256, 384, 384, 512],
                   modules=[2, 2, 2, 2, 4],
-                  make_up_layer=make_fire_layer,
-                  make_hg_layer=make_hg_fire_layer,
-                  make_low_layer=make_fire_layer,
-                  make_hg_layer_revr=make_fire_layer_revr,
+                  make_up_layer=make_layer,
+                  make_hg_layer=make_hg_layer,
+                  make_low_layer=make_layer,
+                  make_hg_layer_revr=make_layer_revr,
                   make_unpool_layer=make_unpool_layer,
                   name=None):
         curr_mod = modules[0]
         next_mod = modules[1]
         curr_dim = dims[0]
         next_dim = dims[1]
-        up1 = make_up_layer(x, curr_dim, curr_dim, curr_mod, name=name + '_up1')
+        up1 = make_up_layer(x, curr_dim, curr_dim, curr_mod, self.block, name=name + '_up1')
         max1 = x
         low1 = make_hg_layer(
-            max1, curr_dim, next_dim, curr_mod, name=name + '_low1')
+            max1, curr_dim, next_dim, curr_mod, self.block, name=name + '_low1')
         low2 = self.hg_module(
             low1,
             n - 1,
@@ -250,9 +278,9 @@ class Hourglass(object):
             make_hg_layer_revr=make_hg_layer_revr,
             make_unpool_layer=make_unpool_layer,
             name=name + '_low2') if n > 1 else make_low_layer(
-                low1, next_dim, next_dim, next_mod, name=name + '_low2')
+                low1, next_dim, next_dim, next_mod, self.block, name=name + '_low2')
         low3 = make_hg_layer_revr(
-            low2, next_dim, curr_dim, curr_mod, name=name + '_low3')
+            low2, next_dim, curr_dim, curr_mod, self.block, name=name + '_low3')
         up2 = make_unpool_layer(low3, curr_dim, name=name + '_up2')
         merg = fluid.layers.elementwise_add(x=up1, y=up2, name=name + '_merg')
         return merg

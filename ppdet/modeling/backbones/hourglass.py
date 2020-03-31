@@ -90,19 +90,19 @@ def residual_block(x, out_dim, k=3, stride=1, name=None):
         x=skip, y=conv2, act='relu', name=name + "_add")
 
 
-def ghost_module(x, out_dim, ratio=2, stride=1, act=None, name=None):
+def ghost_module(x, out_dim, ratio=2, act=None, name=None):
     init_channels = int(math.ceil(out_dim / ratio))
     new_channels = init_channels*(ratio-1)
-    conv1 = _conv_norm(x, 3, init_channels, stride=stride, pad=1, ind=1, act=act, name=name)
-    conv2 = _conv_norm(conv1, 3, new_channels, pad=1, groups=init_channels, ind=2, act=act, name=name)
+    conv1 = _conv_norm(x, 1, init_channels, ind=1, act=act, name=name)
+    conv2 = _conv_norm(conv1, 1, new_channels, groups=init_channels, ind=2, act=act, name=name)
     out = fluid.layers.concat([conv1, conv2], axis=1)
     return out
 
 def ghost_block(x, out_dim, stride=1, name=None):
-    conv1 = ghost_module(x, out_dim, stride=stride, act='relu', name=name+'_pw')
+    conv1 = ghost_module(x, out_dim, act='relu', name=name+'_pw')
     if stride == 2:
-        conv1 = _conv_norm(conv1, 3, out_dim, stride=stride, act=None, name=name+'_depthwise_conv')
-    conv2 = ghost_module(x, out_dim, stride=stride, name=name+'_pw_linear')
+        conv1 = _conv_norm(conv1, 3, out_dim, stride=stride, pad=1, act=None, name=name+'_depthwise_conv')
+    conv2 = ghost_module(conv1, out_dim, name=name+'_pw_linear')
     if stride == 1 and x.shape[1] == out_dim:
         shortcut = x
     else:

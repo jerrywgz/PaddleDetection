@@ -154,16 +154,16 @@ class ProposalTargetGenerator(object):
         self.is_cls_agnostic = is_cls_agnostic,
         self.is_cascade_rcnn = is_cascade_rcnn
 
-    def __call__(self, rpn_rois, rpn_rois_lod, gt_classes, is_crowd, gt_boxes,
+    def __call__(self, rpn_rois, rpn_rois_nums, gt_classes, is_crowd, gt_boxes,
                  im_info):
         rpn_rois = rpn_rois.numpy()
-        rpn_rois_lod = rpn_rois_lod.numpy()
+        rpn_rois_nums = rpn_rois_nums.numpy()
         gt_classes = gt_classes.numpy()
         gt_boxes = gt_boxes.numpy()
         is_crowd = is_crowd.numpy()
         im_info = im_info.numpy()
         outs = generate_proposal_target(
-            rpn_rois, rpn_rois_lod, gt_classes, is_crowd, gt_boxes, im_info,
+            rpn_rois, rpn_rois_nums, gt_classes, is_crowd, gt_boxes, im_info,
             self.batch_size_per_im, self.fg_fraction, self.fg_thresh,
             self.bg_thresh_hi, self.bg_thresh_lo, self.bbox_reg_weights,
             self.num_classes, self.use_random, self.is_cls_agnostic,
@@ -185,17 +185,17 @@ class MaskTargetGenerator(object):
         self.num_classes = num_classes
         self.resolution = resolution
 
-    def __call__(self, im_info, gt_classes, is_crowd, gt_segms, rois, rois_lod,
+    def __call__(self, im_info, gt_classes, is_crowd, gt_segms, rois, rois_nums,
                  labels_int32):
         im_info = im_info.numpy()
         gt_classes = gt_classes.numpy()
         is_crowd = is_crowd.numpy()
         gt_segms = gt_segms.numpy()
         rois = rois.numpy()
-        rois_lod = rois_lod.numpy()
+        rois_nums = rois_nums.numpy()
         labels_int32 = labels_int32.numpy()
         outs = generate_mask_target(im_info, gt_classes, is_crowd, gt_segms,
-                                    rois, rois_lod, labels_int32,
+                                    rois, rois_nums, labels_int32,
                                     self.num_classes, self.resolution)
 
         outs = [to_variable(v) for v in outs]
@@ -217,19 +217,19 @@ class RoIAlign(object):
 
     def __call__(self, inputs):
         cur_l = 0
-        new_lod = [cur_l]
-        rois_lod_np = inputs['rois_lod'].numpy()
-        for l in rois_lod_np:
+        new_nums = [cur_l]
+        rois_nums_np = inputs['rois_nums'].numpy()
+        for l in rois_nums_np:
             cur_l += l
-            new_lod.append(cur_l)
-        lod_t = to_variable(np.asarray(new_lod))
+            new_nums.append(cur_l)
+        nums_t = to_variable(np.asarray(new_nums))
         rois_feat = fluid.layers.roi_align(
             inputs['res4'],
             inputs['rois'],
             self.pooled_height,
             self.pooled_width,
             self.spatial_scale,
-            rois_lod=lod_t)
+            rois_lod=nums_t)
 
         return {'rois_feat': rois_feat}
 
@@ -246,19 +246,19 @@ class RoIPool(object):
 
     def __call__(self, inputs):
         cur_l = 0
-        new_lod = [cur_l]
-        rois_lod_np = inputs['rois_lod'].numpy()
-        for l in rois_lod_np:
+        new_nums = [cur_l]
+        rois_nums_np = inputs['rois_nums'].numpy()
+        for l in rois_nums_np:
             cur_l += l
-            new_lod.append(cur_l)
-        lod_t = to_variable(np.asarray(new_lod))
+            new_nums.append(cur_l)
+        nums_t = to_variable(np.asarray(new_nums))
         rois_feat = fluid.layers.roi_pool(
             inputs['res4'],
             inputs['rois'],
             self.pooled_height,
             self.pooled_width,
             self.spatial_scale,
-            rois_lod=lod_t)
+            rois_nums=nums_t)
 
         return {'rois_feat': rois_feat}
 

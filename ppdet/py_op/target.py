@@ -138,7 +138,7 @@ def _sample_anchor(anchor_by_gt_overlap,
 
 @jit
 def generate_proposal_target(rpn_rois,
-                             rpn_rois_lod,
+                             rpn_rois_nums,
                              gt_classes,
                              is_crowd,
                              gt_boxes,
@@ -159,14 +159,14 @@ def generate_proposal_target(rpn_rois,
     bbox_targets = []
     bbox_inside_weights = []
     bbox_outside_weights = []
-    rois_lod = []
+    rois_nums = []
     batch_size = gt_boxes.shape[0]
     # TODO: modify here
     # rpn_rois = rpn_rois.reshape(batch_size, -1, 4)
     st_num = 0
 
-    for im_i in range(len(rpn_rois_lod)):
-        rpn_rois_num = rpn_rois_lod[im_i]
+    for im_i in range(len(rpn_rois_nums)):
+        rpn_rois_num = rpn_rois_nums[im_i]
         frcn_blobs = _sample_rois(
             rpn_rois[st_num:rpn_rois_num], gt_classes[im_i], is_crowd[im_i],
             gt_boxes[im_i], im_info[im_i], batch_size_per_im, fg_fraction,
@@ -179,7 +179,7 @@ def generate_proposal_target(rpn_rois,
         bbox_targets.append(frcn_blobs['bbox_targets'])
         bbox_inside_weights.append(frcn_blobs['bbox_inside_weights'])
         bbox_outside_weights.append(frcn_blobs['bbox_outside_weights'])
-        rois_lod.append(frcn_blobs['rois'].shape[0])
+        rois_nums.append(frcn_blobs['rois'].shape[0])
 
     rois = np.concatenate(rois, axis=0).astype(np.float32)
     bbox_labels = np.concatenate(
@@ -189,9 +189,9 @@ def generate_proposal_target(rpn_rois,
         bbox_inside_weights, axis=0).astype(np.float32)
     bbox_outside_weights = np.concatenate(
         bbox_outside_weights, axis=0).astype(np.float32)
-    rois_lod = np.asarray(rois_lod, np.int32)
+    rois_nums = np.asarray(rois_nums, np.int32)
 
-    return rois, bbox_labels, bbox_gts, bbox_inside_weights, bbox_outside_weights, rois_lod
+    return rois, bbox_labels, bbox_gts, bbox_inside_weights, bbox_outside_weights, rois_nums
 
 
 @jit
@@ -302,13 +302,13 @@ def _sample_rois(rpn_rois,
 
 @jit
 def generate_mask_target(im_info, gt_classes, is_crowd, gt_segms, rois,
-                         rois_lod, labels_int32, num_classes, resolution):
+                         rois_nums, labels_int32, num_classes, resolution):
     mask_rois = []
     rois_has_mask_int32 = []
     mask_int32 = []
     st_num = 0
-    for i in range(len(rois_lod)):
-        rois_num = rois_lod[i]
+    for i in range(len(rois_nums)):
+        rois_num = rois_nums[i]
         mask_blob = _sample_mask(
             rois[st_num:rois_num], labels_int32[st_num:rois_num], gt_segms[i],
             im_info[i], gt_classes[i], is_crowd[i], num_classes, resolution)

@@ -164,7 +164,5 @@ class MaskRCNN(Layer):
         # make variable  
         for k, v in gbd.items():
             batch = np.asarray(v)
-            if k == 'gt_mask':
-                batch = np.squeeze(batch, axis=3)
             gbd[k] = to_variable(batch)
         return gbd

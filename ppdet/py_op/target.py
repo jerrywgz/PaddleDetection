@@ -122,15 +122,12 @@ def _sample_anchor(anchor_by_gt_overlap,
             fg_fake_inds = np.hstack([fg_fake_inds, fg_value])
     labels[enable_inds] = 0
 
-    #bbox_inside_weight[fake_num:, :] = 1
-
     fg_inds = np.where(labels == 1)[0]
     bg_inds = np.where(labels == 0)[0]
 
     loc_index = np.hstack([fg_fake_inds, fg_inds])
     score_index = np.hstack([fg_inds, bg_inds])
     labels = labels[score_index]
-    #assert not np.any(labels == -1), "Wrong labels with -1"
 
     gt_inds = anchor_to_gt_argmax[loc_index]
 
@@ -168,7 +165,6 @@ def generate_proposal_target(rpn_rois,
     # rpn_rois = rpn_rois.reshape(batch_size, -1, 4)
     st_num = 0
 
-    #for im_i, rpn_rois_num in enumerate(rpn_rois_lod):   
     for im_i in range(len(rpn_rois_lod)):
         rpn_rois_num = rpn_rois_lod[im_i]
         frcn_blobs = _sample_rois(
@@ -339,10 +335,9 @@ def _sample_mask(
         is_crowd,
         num_classes,
         resolution, ):
+
     # remove padding 
     new_gt_polys = []
-    '''
-    # 7, 2, 45, 2
     for i in range(gt_polys.shape[0]):
         gt_segs = []
         for j in range(gt_polys[i].shape[0]):
@@ -350,39 +345,20 @@ def _sample_mask(
             polys = gt_polys[i][j]
             for ii in range(polys.shape[0]):
                 x, y = polys[ii]
-                if (x==-1 and y==-1):
-                    continue 
-                elif(x>=0 and y>=0):
-                    new_poly.append([x,y]) # array, one poly 
-            
+                if (x == -1 and y == -1):
+                    continue
+                elif (x >= 0 and y >= 0):
+                    new_poly.append([x, y])  # array, one poly 
             if len(new_poly) > 0:
                 gt_segs.append(new_poly)
-
         new_gt_polys.append(gt_segs)
-    '''
-    # (4, 36, 2)
-    for i in range(gt_polys.shape[0]):
-        old_poly = gt_polys[i]
-        new_poly = []
-        for j in range(old_poly.shape[0]):
-            x, y = old_poly[j]
-            if (x == -1 and y == -1):
-                continue
-            elif (x >= 0 and y >= 0):
-                new_poly.append([x, y])  # array, one poly 
-
-        if len(new_poly) > 0:
-            new_gt_polys.append(new_poly)
 
     im_scale = im_info[2]
-    # TODO: check here 
-    # div im_scale because rois had mul im_scale
     sample_boxes = rois / im_scale
 
     polys_gt_inds = np.where((gt_classes > 0) & (is_crowd == 0))[0]
 
     polys_gt = [new_gt_polys[i] for i in polys_gt_inds]
-    # (-1, 4)
     boxes_from_polys = polys_to_boxes(polys_gt)
     fg_inds = np.where(label_int32 > 0)[0]
     roi_has_mask = fg_inds.copy()
@@ -390,7 +366,6 @@ def _sample_mask(
     if fg_inds.shape[0] > 0:
         mask_class_labels = label_int32[fg_inds]
         masks = np.zeros((fg_inds.shape[0], resolution**2), dtype=np.int32)
-        #(-1, 4)
         rois_fg = sample_boxes[fg_inds]
 
         overlaps_bbfg_bbpolys = bbox_overlaps_mask(rois_fg, boxes_from_polys)

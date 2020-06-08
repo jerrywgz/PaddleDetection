@@ -68,10 +68,6 @@ def expand_bbox_targets(bbox_targets_input,
                         is_cls_agnostic=False):
     class_labels = bbox_targets_input[:, 0]
     fg_inds = np.where(class_labels > 0)[0]
-    #if is_cls_agnostic:
-    #    class_labels = [1 if ll > 0 else 0 for ll in class_labels]
-    #    class_labels = np.array(class_labels, dtype=np.int32)
-    #    class_nums = 2
     if not is_cls_agnostic:
         class_nums = 2
     bbox_targets = np.zeros((class_labels.shape[0], 4 * class_nums))
@@ -85,7 +81,6 @@ def expand_bbox_targets(bbox_targets_input,
     return bbox_targets, bbox_inside_weights
 
 
-# post process util 
 @jit
 def nms(dets, thresh):
     """Apply classic DPM-style greedy NMS."""
@@ -102,18 +97,6 @@ def nms(dets, thresh):
 
     ndets = dets.shape[0]
     suppressed = np.zeros((ndets), dtype=np.int)
-
-    # nominal indices
-    # _i, _j
-    # sorted indices
-    # i, j
-    # temp variables for box i's (the box currently under consideration)
-    # ix1, iy1, ix2, iy2, iarea
-
-    # variables for computing overlap with box j (lower scoring box)
-    # xx1, yy1, xx2, yy2
-    # w, h
-    # inter, ovr
 
     for _i in range(ndets):
         i = order[_i]

@@ -127,6 +127,7 @@ class ProposalGenerator(object):
 
 
 @register
+@serializable
 class ProposalTargetGenerator(object):
     __shared__ = ['num_classes']
 
@@ -175,6 +176,7 @@ class ProposalTargetGenerator(object):
 
 
 @register
+@serializable
 class MaskTargetGenerator(object):
     __shared__ = ['num_classes']
 

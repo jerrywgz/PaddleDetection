@@ -101,18 +101,23 @@ def poly2mask(xy, k, h, w):
     return mask
 
 
-#@jit 
 def polys_to_boxes(polys):
     """Convert a list of polygons into an array of tight bounding boxes."""
     boxes_from_polys = np.zeros((len(polys), 4), dtype=np.float32)
     for j in range(len(polys)):
         x_min, y_min = 10000000, 10000000
-        poly = polys[j]
-        x0 = min(min(p[::2]) for p in poly)
-        y0 = min(min(p[1::2]) for p in poly)
-        x1 = max(max(p[::2]) for p in poly)
-        y1 = max(max(p[1::2]) for p in poly)
-        boxes_from_polys[j, :] = [x0, y0, x1, y1]  #[x_min, y_min, x_max, y_max]
+        x_max, y_max = 0, 0
+        for i in range(len(polys[j])):
+            poly = polys[j][i]
+            x0 = min(min(p[::2]) for p in poly)
+            x_min = min(x0, x_min)
+            y0 = min(min(p[1::2]) for p in poly)
+            y_min = min(y0, y_min)
+            x1 = max(max(p[::2]) for p in poly)
+            x_max = max(x_max, x1)
+            y1 = max(max(p[1::2]) for p in poly)
+            y_max = max(y1, y_max)
+        boxes_from_polys[j, :] = [x_min, y_min, x_max, y_max]
     return boxes_from_polys
 
 

@@ -11,18 +11,14 @@ num_classes: 81
 
 # Model Achitecture
 MaskRCNN:
-  # Stage 1: backbone + anchor_head
-  backbone: ResNet
-  rpn_neck: RPNNeck
-  rpn_head: RPNHead
+  # model anchor info flow
   anchor: Anchor
-  # Stage 2: roi + bbox_head
   proposal: Proposal
   mask: Mask
-  roi_extractor: RoIAlign
-  bbox_neck: BBoxNeck
+  # model feat info flow
+  backbone: ResNet
+  rpn_head: RPNHead
   bbox_head: BBoxHead
-  mask_neck: MaskNeck
   mask_head: MaskHead
 
 ResNet:
@@ -32,6 +28,9 @@ ResNet:
   freeze_at: 2
 
 RPNHead:
+  rpn_feat:
+    feat_in: 1024
+    feat_out: 1024
   anchor_per_position: 15
   # TODO: move into Anchor part
   # update anchor_generator op to add param for featmap size instead of inputs rpn feat var
@@ -41,6 +40,23 @@ RPNHead:
     rpn_negative_overlap: 0.3
     rpn_positive_overlap: 0.7
     rpn_straddle_thresh: 0.0
+
+BBoxHead:
+  bbox_feat:
+    feat_in: 1024
+    feat_out: 512
+    roi_extractor:
+      resolution: 14
+      sampling_ratio: 0
+      spatial_scale: 0.0625
+      extractor_type: 'RoIPool'
+
+MaskHead:
+  feat_out: 256
+  resolution: 14
+  mask_feat:
+    feat_in: 2048
+    feat_out: 256
 
 Anchor:
   anchor_generator:
@@ -74,13 +90,7 @@ Proposal:
 
 Mask:
   mask_target_generator:
-    #num_classes: 81
     resolution: 14
-
-RoIAlign:
-  resolution: 14
-  sampling_ratio: 0
-  spatial_scale: 0.0625
 
 # Train
 LearningRate:

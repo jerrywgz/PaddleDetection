@@ -21,38 +21,25 @@ __all__ = ['FasterRCNN']
 class FasterRCNN(Layer):
     __category__ = 'architecture'
     __inject__ = [
-        # stage 1
-        'backbone',
-        'rpn_neck',
-        'rpn_head',
         'anchor',
-        # stage 2 
         'proposal',
-        'roi_extractor',
-        'bbox_neck',
+        'backbone',
+        'rpn_head',
         'bbox_head',
     ]
 
-    def __init__(
-            self,
-            backbone,
-            rpn_neck,
-            rpn_head,
-            anchor,
-            proposal,
-            roi_extractor,
-            bbox_neck='BBoxNeck',
-            bbox_head='BBoxHead',
-            rpn_only=False, ):
+    def __init__(self,
+                 anchor,
+                 proposal,
+                 backbone,
+                 rpn_head,
+                 bbox_head='BBoxHead',
+                 rpn_only=False):
         super(FasterRCNN, self).__init__()
-
-        self.backbone = backbone
-        self.rpn_neck = rpn_neck
-        self.rpn_head = rpn_head
         self.anchor = anchor
         self.proposal = proposal
-        self.roi_extractor = roi_extractor
-        self.bbox_neck = bbox_neck
+        self.backbone = backbone
+        self.rpn_head = rpn_head
         self.bbox_head = bbox_head
         self.rpn_only = rpn_only
 
@@ -65,8 +52,6 @@ class FasterRCNN(Layer):
         self.gbd.update(bb_out)
 
         # RPN
-        rpn_neck_out = self.rpn_neck(self.gbd)
-        self.gbd.update(rpn_neck_out)
         rpn_head_out = self.rpn_head(self.gbd)
         self.gbd.update(rpn_head_out)
 
@@ -78,13 +63,7 @@ class FasterRCNN(Layer):
         proposal_out = self.proposal(self.gbd)
         self.gbd.update(proposal_out)
 
-        # RoI Extractor
-        roi_out = self.roi_extractor(self.gbd)
-        self.gbd.update(roi_out)
-
         # BBox Head
-        bbox_neck_out = self.bbox_neck(self.gbd)
-        self.gbd.update(bbox_neck_out)
         bbox_head_out = self.bbox_head(self.gbd)
         self.gbd.update(bbox_head_out)
 

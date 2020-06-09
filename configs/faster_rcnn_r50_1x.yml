@@ -11,25 +11,24 @@ num_classes: 81
 
 # Model Achitecture
 FasterRCNN:
-  # Stage 1: backbone + anchor_head
-  backbone: ResNet
-  rpn_neck: RPNNeck
-  rpn_head: RPNHead
+  # model anchor info flow
   anchor: Anchor
-  # Stage 2: roi + bbox_head
   proposal: Proposal
-  roi_extractor: RoIAlign
-  bbox_neck: BBoxNeck
+  # model feat info flow
+  backbone: ResNet
+  rpn_head: RPNHead
   bbox_head: BBoxHead
 
-
 ResNet:
-  norm_type: affine_channel
+  norm_type: bn
   depth: 50
   feature_maps: 4
   freeze_at: 2
 
 RPNHead:
+  rpn_feat:
+    feat_in: 1024
+    feat_out: 1024
   anchor_per_position: 15
   # TODO: move into Anchor part
   # update anchor_generator op to add param for featmap size instead of inputs rpn feat var
@@ -39,6 +38,16 @@ RPNHead:
     rpn_negative_overlap: 0.3
     rpn_positive_overlap: 0.7
     rpn_straddle_thresh: 0.0
+
+BBoxHead:
+  bbox_feat:
+    feat_in: 1024
+    feat_out: 512
+    roi_extractor:
+      resolution: 14
+      sampling_ratio: 0
+      spatial_scale: 0.0625
+      extractor_type: 'RoIPool'
 
 Anchor:
   anchor_generator:
@@ -70,10 +79,6 @@ Proposal:
     fg_fraction: 0.25
     fg_thresh: 0.5
 
-RoIPool:
-  resolution: 7
-  sampling_ratio: 0
-  spatial_scale: 0.0625
 
 # Train
 LearningRate:
@@ -94,4 +99,4 @@ OptimizerBuilder:
     factor: 0.0001
     type: L2
 
-_READER_: 'faster_reader.yml'
+_READER_: 'mask_reader.yml'

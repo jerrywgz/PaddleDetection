@@ -51,7 +51,7 @@ def generate_rpn_anchor_target(anchor_box,
         score_inds = inds_inside[score_inds]
         sampled_anchor = anchor_box[loc_inds]
         sampled_gt = gt_boxes_slice[gt_inds]
-        box_deltas = box_to_delta(sampled_anchor, sampled_gt, [1., 1., 1., 1.])
+        box_deltas = bbox2delta(sampled_anchor, sampled_gt, [1., 1., 1., 1.])
 
         if i == 0:
             loc_indexes = loc_inds

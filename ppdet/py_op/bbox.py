@@ -3,60 +3,75 @@ from numba import jit
 
 
 @jit
-def bbox_overlaps(roi_boxes, gt_boxes):
-    w1 = np.maximum(roi_boxes[:, 2] - roi_boxes[:, 0] + 1, 0)
-    h1 = np.maximum(roi_boxes[:, 3] - roi_boxes[:, 1] + 1, 0)
-    w2 = np.maximum(gt_boxes[:, 2] - gt_boxes[:, 0] + 1, 0)
-    h2 = np.maximum(gt_boxes[:, 3] - gt_boxes[:, 1] + 1, 0)
-    area1 = w1 * h1
-    area2 = w2 * h2
+def bbox2delta(bboxes1, bboxes2, weights):
+    ex_w = bboxes1[:, 2] - bboxes1[:, 0] + 1
+    ex_h = bboxes1[:, 3] - bboxes1[:, 1] + 1
+    ex_ctr_x = bboxes1[:, 0] + 0.5 * ex_w
+    ex_ctr_y = bboxes1[:, 1] + 0.5 * ex_h
 
-    overlaps = np.zeros((roi_boxes.shape[0], gt_boxes.shape[0]))
-    for ind1 in range(roi_boxes.shape[0]):
-        for ind2 in range(gt_boxes.shape[0]):
-            inter_x1 = np.maximum(roi_boxes[ind1, 0], gt_boxes[ind2, 0])
-            inter_y1 = np.maximum(roi_boxes[ind1, 1], gt_boxes[ind2, 1])
-            inter_x2 = np.minimum(roi_boxes[ind1, 2], gt_boxes[ind2, 2])
-            inter_y2 = np.minimum(roi_boxes[ind1, 3], gt_boxes[ind2, 3])
-            inter_w = np.maximum(inter_x2 - inter_x1 + 1, 0)
-            inter_h = np.maximum(inter_y2 - inter_y1 + 1, 0)
-            inter_area = inter_w * inter_h
-            iou = inter_area * 1.0 / (area1[ind1] + area2[ind2] - inter_area)
-            overlaps[ind1, ind2] = iou
-    return overlaps
-
-
-@jit
-def box_to_delta(ex_boxes, gt_boxes, weights):
-    ex_w = ex_boxes[:, 2] - ex_boxes[:, 0] + 1
-    ex_h = ex_boxes[:, 3] - ex_boxes[:, 1] + 1
-    ex_ctr_x = ex_boxes[:, 0] + 0.5 * ex_w
-    ex_ctr_y = ex_boxes[:, 1] + 0.5 * ex_h
-
-    gt_w = gt_boxes[:, 2] - gt_boxes[:, 0] + 1
-    gt_h = gt_boxes[:, 3] - gt_boxes[:, 1] + 1
-    gt_ctr_x = gt_boxes[:, 0] + 0.5 * gt_w
-    gt_ctr_y = gt_boxes[:, 1] + 0.5 * gt_h
+    gt_w = bboxes2[:, 2] - bboxes2[:, 0] + 1
+    gt_h = bboxes2[:, 3] - bboxes2[:, 1] + 1
+    gt_ctr_x = bboxes2[:, 0] + 0.5 * gt_w
+    gt_ctr_y = bboxes2[:, 1] + 0.5 * gt_h
 
     dx = (gt_ctr_x - ex_ctr_x) / ex_w / weights[0]
     dy = (gt_ctr_y - ex_ctr_y) / ex_h / weights[1]
     dw = (np.log(gt_w / ex_w)) / weights[2]
     dh = (np.log(gt_h / ex_h)) / weights[3]
 
-    targets = np.vstack([dx, dy, dw, dh]).transpose()
-    return targets
+    deltas = np.vstack([dx, dy, dw, dh]).transpose()
+    return deltas
 
 
 @jit
-def compute_targets(roi_boxes, gt_boxes, labels, bbox_reg_weights):
-    assert roi_boxes.shape[0] == gt_boxes.shape[0]
-    assert roi_boxes.shape[1] == 4
-    assert gt_boxes.shape[1] == 4
+def delta2bbox(deltas, boxes, weights, bbox_clip=4.13):
+    if boxes.shape[0] == 0:
+        return np.zeros((0, deltas.shape[1]), dtype=deltas.dtype)
+    boxes = boxes.astype(deltas.dtype, copy=False)
 
-    targets = np.zeros(roi_boxes.shape)
+    widths = boxes[:, 2] - boxes[:, 0] + 1.0
+    heights = boxes[:, 3] - boxes[:, 1] + 1.0
+    ctr_x = boxes[:, 0] + 0.5 * widths
+    ctr_y = boxes[:, 1] + 0.5 * heights
+
+    wx, wy, ww, wh = weights
+    dx = deltas[:, 0::4] * wx
+    dy = deltas[:, 1::4] * wy
+    dw = deltas[:, 2::4] * ww
+    dh = deltas[:, 3::4] * wh
+
+    # Prevent sending too large values into np.exp()
+    dw = np.minimum(dw, bbox_clip)
+    dh = np.minimum(dh, bbox_clip)
+
+    pred_ctr_x = dx * widths[:, np.newaxis] + ctr_x[:, np.newaxis]
+    pred_ctr_y = dy * heights[:, np.newaxis] + ctr_y[:, np.newaxis]
+    pred_w = np.exp(dw) * widths[:, np.newaxis]
+    pred_h = np.exp(dh) * heights[:, np.newaxis]
+
+    pred_boxes = np.zeros(deltas.shape, dtype=deltas.dtype)
+    # x1
+    pred_boxes[:, 0::4] = pred_ctr_x - 0.5 * pred_w
+    # y1
+    pred_boxes[:, 1::4] = pred_ctr_y - 0.5 * pred_h
+    # x2 (note: "- 1" is correct; don't be fooled by the asymmetry)
+    pred_boxes[:, 2::4] = pred_ctr_x + 0.5 * pred_w - 1
+    # y2 (note: "- 1" is correct; don't be fooled by the asymmetry)
+    pred_boxes[:, 3::4] = pred_ctr_y + 0.5 * pred_h - 1
+
+    return pred_boxes
+
+
+@jit
+def compute_targets(bboxes1, bboxes2, labels, bbox_reg_weights):
+    assert bboxes1.shape[0] == bboxes2.shape[0]
+    assert bboxes1.shape[1] == 4
+    assert bboxes2.shape[1] == 4
+
+    targets = np.zeros(bboxes1.shape)
     bbox_reg_weights = np.asarray(bbox_reg_weights)
-    targets = box_to_delta(
-        ex_boxes=roi_boxes, gt_boxes=gt_boxes, weights=bbox_reg_weights)
+    targets = bbox2delta(
+        bboxes1=bboxes1, bboxes2=bboxes2, weights=bbox_reg_weights)
 
     return np.hstack([labels[:, np.newaxis], targets]).astype(
         np.float32, copy=False)
@@ -82,8 +97,31 @@ def expand_bbox_targets(bbox_targets_input,
 
 
 @jit
+def bbox_overlaps(bboxes1, bboxes2):
+    w1 = np.maximum(bboxes1[:, 2] - bboxes1[:, 0] + 1, 0)
+    h1 = np.maximum(bboxes1[:, 3] - bboxes1[:, 1] + 1, 0)
+    w2 = np.maximum(bboxes2[:, 2] - bboxes2[:, 0] + 1, 0)
+    h2 = np.maximum(bboxes2[:, 3] - bboxes2[:, 1] + 1, 0)
+    area1 = w1 * h1
+    area2 = w2 * h2
+
+    overlaps = np.zeros((bboxes1.shape[0], bboxes2.shape[0]))
+    for ind1 in range(bboxes1.shape[0]):
+        for ind2 in range(bboxes2.shape[0]):
+            inter_x1 = np.maximum(bboxes1[ind1, 0], bboxes2[ind2, 0])
+            inter_y1 = np.maximum(bboxes1[ind1, 1], bboxes2[ind2, 1])
+            inter_x2 = np.minimum(bboxes1[ind1, 2], bboxes2[ind2, 2])
+            inter_y2 = np.minimum(bboxes1[ind1, 3], bboxes2[ind2, 3])
+            inter_w = np.maximum(inter_x2 - inter_x1 + 1, 0)
+            inter_h = np.maximum(inter_y2 - inter_y1 + 1, 0)
+            inter_area = inter_w * inter_h
+            iou = inter_area * 1.0 / (area1[ind1] + area2[ind2] - inter_area)
+            overlaps[ind1, ind2] = iou
+    return overlaps
+
+
+@jit
 def nms(dets, thresh):
-    """Apply classic DPM-style greedy NMS."""
     if dets.shape[0] == 0:
         return []
     x1 = dets[:, 0]
@@ -126,23 +164,42 @@ def nms(dets, thresh):
 
 
 @jit
-def expand_boxes(boxes, scale):
-    """Expand an array of boxes by a given scale."""
-    w_half = (boxes[:, 2] - boxes[:, 0]) * .5
-    h_half = (boxes[:, 3] - boxes[:, 1]) * .5
-    x_c = (boxes[:, 2] + boxes[:, 0]) * .5
-    y_c = (boxes[:, 3] + boxes[:, 1]) * .5
+def expand_bbox(bboxes, scale):
+    """Expand an array of bboxes by a given scale."""
+    w_half = (bboxes[:, 2] - bboxes[:, 0]) * .5
+    h_half = (bboxes[:, 3] - bboxes[:, 1]) * .5
+    x_c = (bboxes[:, 2] + bboxes[:, 0]) * .5
+    y_c = (bboxes[:, 3] + bboxes[:, 1]) * .5
 
     w_half *= scale
     h_half *= scale
 
-    boxes_exp = np.zeros(boxes.shape)
-    boxes_exp[:, 0] = x_c - w_half
-    boxes_exp[:, 2] = x_c + w_half
-    boxes_exp[:, 1] = y_c - h_half
-    boxes_exp[:, 3] = y_c + h_half
+    bboxes_exp = np.zeros(bboxes.shape)
+    bboxes_exp[:, 0] = x_c - w_half
+    bboxes_exp[:, 2] = x_c + w_half
+    bboxes_exp[:, 1] = y_c - h_half
+    bboxes_exp[:, 3] = y_c + h_half
 
-    return boxes_exp
+    return bboxes_exp
+
+
+@jit
+def clip_tiled_bbox(boxes, im_shape):
+    """Clip boxes to image boundaries. im_shape is [height, width] and boxes
+    has shape (N, 4 * num_tiled_boxes)."""
+    assert boxes.shape[1] % 4 == 0, \
+        'boxes.shape[1] is {:d}, but must be divisible by 4.'.format(
+        boxes.shape[1]
+    )
+    # x1 >= 0
+    boxes[:, 0::4] = np.maximum(np.minimum(boxes[:, 0::4], im_shape[1] - 1), 0)
+    # y1 >= 0
+    boxes[:, 1::4] = np.maximum(np.minimum(boxes[:, 1::4], im_shape[0] - 1), 0)
+    # x2 < im_shape[1]
+    boxes[:, 2::4] = np.maximum(np.minimum(boxes[:, 2::4], im_shape[1] - 1), 0)
+    # y2 < im_shape[0]
+    boxes[:, 3::4] = np.maximum(np.minimum(boxes[:, 3::4], im_shape[0] - 1), 0)
+    return boxes
 
 
 @jit
@@ -166,7 +223,7 @@ def xyxy_to_xywh(xyxy):
         h = xyxy[3] - y1 + 1
         return (x1, y1, w, h)
     elif isinstance(xyxy, np.ndarray):
-        # Multiple boxes given as a 2D ndarray
+        # Multiple bboxes given as a 2D ndarray
         return np.hstack((xyxy[:, 0:2], xyxy[:, 2:4] - xyxy[:, 0:2] + 1))
     else:
         raise TypeError('Argument xyxy must be a list, tuple, or numpy array.')
@@ -183,7 +240,7 @@ def xywh_to_xyxy(xywh):
         y2 = y1 + np.maximum(0., xywh[3] - 1.)
         return (x1, y1, x2, y2)
     elif isinstance(xywh, np.ndarray):
-        # Multiple boxes given as a 2D ndarray
+        # Multiple bboxes given as a 2D ndarray
         return np.hstack(
             (xywh[:, 0:2], xywh[:, 0:2] + np.maximum(0, xywh[:, 2:4] - 1)))
     else:

@@ -4,6 +4,7 @@ import paddle.fluid as fluid
 from paddle.fluid.dygraph.base import to_variable
 from ppdet.core.workspace import register, serializable
 from ppdet.py_op.target import generate_rpn_anchor_target, generate_proposal_target, generate_mask_target
+from ppdet.py_op.post_processing import get_nmsed_box
 
 
 @register
@@ -214,8 +215,6 @@ class RoIExtractor(object):
         super(RoIExtractor, self).__init__()
         if isinstance(resolution, Integral):
             resolution = [resolution, resolution]
-        #self.pooled_height = resolution[0]
-        #self.pooled_width = resolution[1]
         self.resolution = resolution
         self.spatial_scale = spatial_scale
         self.sampling_ratio = sampling_ratio
@@ -233,8 +232,6 @@ class RoIExtractor(object):
             rois_feat = fluid.layers.roi_align(
                 feat,
                 rois,
-                #self.pooled_height,
-                #self.pooled_width,
                 self.resolution[0],
                 self.resolution[1],
                 self.spatial_scale,
@@ -243,41 +240,10 @@ class RoIExtractor(object):
             rois_feat = fluid.layers.roi_pool(
                 feat,
                 rois,
-                #self.pooled_height,
-                #self.pooled_width,
                 self.resolution[0],
                 self.resolution[1],
                 self.spatial_scale,
                 rois_lod=nums_t)
-
-        return {'rois_feat': rois_feat}
-
-
-@register
-class RoIPool(object):
-    def __init__(self, resolution=7, spatial_scale=1. / 16):
-        super(RoIPool, self).__init__()
-        if isinstance(resolution, Integral):
-            resolution = [resolution, resolution]
-        self.pooled_height = resolution[0]
-        self.pooled_width = resolution[1]
-        self.spatial_scale = spatial_scale
-
-    def __call__(self, feat, rois, rois_num):
-        cur_l = 0
-        new_nums = [cur_l]
-        rois_nums_np = rois_nums.numpy()
-        for l in rois_nums_np:
-            cur_l += l
-            new_nums.append(cur_l)
-        nums_t = to_variable(np.asarray(new_nums))
-        rois_feat = fluid.layers.roi_pool(
-            feat,
-            rois,
-            self.pooled_height,
-            self.pooled_width,
-            self.spatial_scale,
-            rois_nums=nums_t)
 
         return {'rois_feat': rois_feat}
 

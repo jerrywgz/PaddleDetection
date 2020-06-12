@@ -43,7 +43,7 @@ EvalReader:
     !COCODataSet
     image_dir: val2017
     anno_path: annotations/instances_val2017.json
-    dataset_dir: dataset/coco
+    dataset_dir: /home/ai/dataset/COCO17
   sample_transforms:
   - !DecodeImage
     to_rgb: true
@@ -60,6 +60,11 @@ EvalReader:
   - !Permute
     channel_first: true
     to_bgr: false
+  batch_transforms:
+  - !PadBatch
+    pad_to_stride: 32
+    use_padded_im_info: false
+    pad_gt: True
   batch_size: 1
   shuffle: false
   drop_empty: false

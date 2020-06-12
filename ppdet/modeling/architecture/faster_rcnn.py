@@ -21,11 +21,8 @@ __all__ = ['FasterRCNN']
 class FasterRCNN(Layer):
     __category__ = 'architecture'
     __inject__ = [
-        'anchor',
-        'proposal',
-        'backbone',
-        'rpn_head',
-        'bbox_head',
+        'anchor', 'proposal', 'backbone', 'rpn_head', 'bbox_head',
+        'infer_post_process'
     ]
 
     def __init__(self,
@@ -33,7 +30,8 @@ class FasterRCNN(Layer):
                  proposal,
                  backbone,
                  rpn_head,
-                 bbox_head='BBoxHead',
+                 bbox_head,
+                 infer_post_process,
                  rpn_only=False):
         super(FasterRCNN, self).__init__()
         self.anchor = anchor
@@ -41,6 +39,7 @@ class FasterRCNN(Layer):
         self.backbone = backbone
         self.rpn_head = rpn_head
         self.bbox_head = bbox_head
+        self.infer_post_process = infer_post_process
         self.rpn_only = rpn_only
 
     def forward(self, inputs, mode='train'):
@@ -98,15 +97,18 @@ class FasterRCNN(Layer):
         return out
 
     def post_processing(self, inputs):
-        # used in infer 
-        pass
+        # used in infer
+        bbox_prob = fluid.layers.softmax(inputs['bbox_score'], use_cudnn=False)
+        inputs['bbox_prob'] == bbox_prob
+        outs = self.infer_post_process(inputs)
+        outs = {'bbox_nums': outs[0], 'bbox_pred': outs[1]}
+        return outs
 
-    def build_inputs(self,
-                     inputs,
-                     fields=[
-                         'image', 'im_info', 'im_id', 'gt_bbox', 'gt_class',
-                         'is_crowd'
-                     ]):
+    def build_inputs(
+            self,
+            inputs,
+            #fields=['image', 'im_info', 'im_id', 'gt_bbox', 'gt_class', 'is_crowd']
+            fields=['image', 'im_info', 'im_id', 'im_shape']):
         gbd = BufferDict()
         with fluid.dygraph.guard():
             for i, k in enumerate(fields):

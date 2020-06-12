@@ -30,8 +30,14 @@ class BBoxFeat(Layer):
             pool_type='avg', global_pooling=True)
 
     def forward(self, inputs):
-        roi_ext_out = self.roi_extractor(inputs['res4'], inputs['rois'],
-                                         inputs['rois_nums'])
+        if inputs['mode'] == 'train':
+            rois = inputs['rois']
+            rois_num = inputs['rois_num']
+        elif inputs['mode'] == 'eval':
+            rois = inputs['rpn_rois']
+            rois_num = inputs['rpn_rois_nums']
+        roi_ext_out = self.roi_extractor(inputs['res4'], rois, rois_num)
+
         x = roi_ext_out['rois_feat']
         y_res5 = self.res5(x)
         y = self.res5_pool(y_res5)
@@ -46,16 +52,18 @@ class BBoxHead(Layer):
     __shared__ = ['num_classes']
     __inject__ = ['bbox_feat']
 
-    def __init__(self, num_classes=81, bbox_feat=BBoxFeat().__dict__):
+    def __init__(self,
+                 in_feat=2048,
+                 num_classes=81,
+                 bbox_feat=BBoxFeat().__dict__):
         super(BBoxHead, self).__init__()
         self.num_classes = num_classes
         self.bbox_feat = bbox_feat
         if isinstance(bbox_feat, dict):
-            print("bbox head: ", bbox_feat)
             self.bbox_feat = BBoxFeat(**bbox_feat)
 
         self.bbox_score = fluid.dygraph.Linear(
-            input_dim=2048,
+            input_dim=in_feat,
             output_dim=1 * self.num_classes,
             act=None,
             param_attr=ParamAttr(
@@ -65,7 +73,7 @@ class BBoxHead(Layer):
                 name='cls_score_b', learning_rate=2., regularizer=L2Decay(0.)))
 
         self.bbox_delta = fluid.dygraph.Linear(
-            input_dim=2048,
+            input_dim=in_feat,
             output_dim=4 * self.num_classes,
             act=None,
             param_attr=ParamAttr(

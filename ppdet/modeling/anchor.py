@@ -5,7 +5,8 @@ from paddle.fluid.dygraph import Layer
 from paddle.fluid.dygraph.base import to_variable
 
 from ppdet.core.workspace import register
-from ppdet.modeling.ops import AnchorGenerator, ProposalGenerator, ProposalTargetGenerator, MaskTargetGenerator
+from ppdet.modeling.ops import (AnchorGenerator, ProposalGenerator,
+                                ProposalTargetGenerator, MaskTargetGenerator)
 
 
 @register
@@ -39,14 +40,18 @@ class Anchor(Layer):
 
 @register
 class Proposal(Layer):
-    __inject__ = ['proposal_generator', 'proposal_target_generator']
+    __inject__ = [
+        'proposal_generator',
+        'proposal_target_generator',
+    ]
 
     def __init__(self,
                  proposal_generator=ProposalGenerator().__dict__,
-                 proposal_target_generator=ProposalTargetGenerator()):
+                 proposal_target_generator=ProposalTargetGenerator().__dict__):
         super(Proposal, self).__init__()
         self.proposal_generator = proposal_generator
         self.proposal_target_generator = proposal_target_generator
+
         if isinstance(proposal_generator, dict):
             self.proposal_generator = ProposalGenerator(**proposal_generator)
         if isinstance(proposal_target_generator, dict):
@@ -129,4 +134,35 @@ class Mask(Layer):
             'rois_has_mask_int32': outs[1],
             'mask_int32': outs[2]
         }
+        return outs
+
+
+@register
+class InferPostProcess(object):
+    __shared__ = ['num_classes']
+
+    def __init__(self,
+                 num_classes=81,
+                 keep_top_k=100,
+                 score_threshold=0.05,
+                 nms_threshold=0.5,
+                 nms_type='MultiClassNMS'):
+        super(InferPostProcess, self).__init__()
+        self.num_classes = num_classes
+        self.keept_top_k = keep_top_k
+        self.score_threshold = score_threshold
+        self.nms_threshold = nms_threshold
+        self.nms_type = nms_type
+
+    def __call__(self, inputs):
+        # TODO: optim here
+        bbox_delta = inputs['bbox_delta'].numpy()
+        bbox_prob = inputs['bbox_prob'].numpy()
+        img_info = inputs['img_info'].numpy()
+        outs = get_nmsed_box(bbox_delta, bbox_prob, img_info, self.num_class,
+                             self.keep_top_k, self.score_threshold,
+                             self.nms_threshold)
+        outs = [to_variable(v) for v in outs]
+        for v in outs:
+            v.stop_gradient = True
         return outs

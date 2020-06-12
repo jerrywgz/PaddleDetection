@@ -3,7 +3,7 @@ use_gpu: true
 max_iters: 180000
 log_smooth_window: 20
 save_dir: output
-snapshot_iter: 10000
+snapshot_iter: 1000 #10000
 pretrain_weights: https://paddle-imagenet-models-name.bj.bcebos.com/ResNet50_cos_pretrained.tar
 metric: COCO
 weights: output/faster_rcnn_r50_1x/model_final
@@ -91,6 +91,8 @@ Proposal:
 Mask:
   mask_target_generator:
     resolution: 14
+
+# Infer
 
 # Train
 LearningRate:

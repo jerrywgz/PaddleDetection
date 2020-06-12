@@ -90,9 +90,8 @@ def main(FLAGS):
 
     for iter_id, data in enumerate(train_reader()):
         start_time = time.time()
-        #for batch in data:
-        #    print(data)
-        # forward
+
+        # forward 
         outputs = model(data)
 
         # backward
@@ -107,9 +106,16 @@ def main(FLAGS):
         model.clear_gradients()
 
         cost_time = time.time() - start_time
-
         print("iter: {}, time: {}, loss: {}".format(iter_id, cost_time,
                                                     loss.numpy()[0]))
+
+        if iter_id > 0 and iter_id % cfg.snapshot_iter == 0:
+            cfg_name = os.path.basename(FLAGS.config).split('.')[0]
+            save_name = str(
+                iter_id) if iter_id != cfg.max_iters - 1 else "model_final"
+            save_dir = os.path.join(cfg.save_dir, cfg_name, save_name)
+            fluid.dygraph.save_dygraph(model.state_dict(), save_dir)
+            fluid.dygraph.save_dygraph(optimizer.state_dict(), save_dir)
 
 
 if __name__ == '__main__':

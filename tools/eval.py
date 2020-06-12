@@ -38,10 +38,10 @@ def main(FLAGS):
     model.set_dict(param_state_dict)
 
     # Reader 
-    train_reader = create_reader(cfg.EvalReader, devices_num=devices_num)
+    eval_reader = create_reader(cfg.EvalReader, devices_num=devices_num)
 
     # Eval 
-    for iter_id, data in enumerate(train_reader()):
+    for iter_id, data in enumerate(eval_reader()):
         start_time = time.time()
 
         # forward 
@@ -49,6 +49,9 @@ def main(FLAGS):
 
         # call eval 
         cost_time = time.time() - start_time
+
+        # log 
+        print("Eval iter: {}, time: {}".format(iter_id, cost_time))
 
 
 if __name__ == '__main__':

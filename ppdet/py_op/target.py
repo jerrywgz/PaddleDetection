@@ -280,8 +280,8 @@ def _sample_rois(rpn_rois,
     sampled_boxes = boxes[keep_inds]
     sampled_gts = gt_boxes[box_to_gt_ind_map[keep_inds]]
     sampled_gts[fg_rois_per_this_image:, :] = gt_boxes[0]
-    bbox_label_targets = compute_targets(sampled_boxes, sampled_gts,
-                                         sampled_labels, bbox_reg_weights)
+    bbox_label_targets = compute_bbox_targets(sampled_boxes, sampled_gts,
+                                              sampled_labels, bbox_reg_weights)
     bbox_targets, bbox_inside_weights = expand_bbox_targets(
         bbox_label_targets, class_nums, is_cls_agnostic)
     bbox_outside_weights = np.array(

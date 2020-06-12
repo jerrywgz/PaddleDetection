@@ -7,7 +7,7 @@ from paddle.fluid.regularizer import L2Decay
 from paddle.fluid.dygraph.nn import Conv2D, Pool2D
 
 from ppdet.core.workspace import register
-from ..backbone.resnet import Blocks as resnet_blocks
+from ..backbone.resnet import Blocks
 from ..ops import RoIExtractor
 
 
@@ -24,7 +24,7 @@ class BBoxFeat(Layer):
         if isinstance(roi_extractor, dict):
             self.roi_extractor = RoIExtractor(**roi_extractor)
 
-        self.res5 = resnet_blocks(
+        self.res5 = Blocks(
             "res5", ch_in=feat_in, ch_out=feat_out, count=3, stride=2)
         self.res5_pool = fluid.dygraph.Pool2D(
             pool_type='avg', global_pooling=True)
@@ -32,18 +32,16 @@ class BBoxFeat(Layer):
     def forward(self, inputs):
         if inputs['mode'] == 'train':
             rois = inputs['rois']
-            rois_num = inputs['rois_num']
+            rois_num = inputs['rois_nums']
         elif inputs['mode'] == 'eval':
             rois = inputs['rpn_rois']
             rois_num = inputs['rpn_rois_nums']
-        roi_ext_out = self.roi_extractor(inputs['res4'], rois, rois_num)
-
-        x = roi_ext_out['rois_feat']
+        rois_feat = self.roi_extractor(inputs['res4'], rois, rois_num)
+        x = rois_feat
         y_res5 = self.res5(x)
         y = self.res5_pool(y_res5)
         y = fluid.layers.squeeze(y, axes=[2, 3])
-        outs = {'res5': y_res5, "bbox_feat": y}
-        outs.update(roi_ext_out)
+        outs = {'rois_feat': rois_feat, 'res5': y_res5, "bbox_feat": y}
         return outs
 
 
@@ -88,6 +86,9 @@ class BBoxHead(Layer):
         bs = self.bbox_score(x)
         bd = self.bbox_delta(x)
         outs = {'bbox_score': bs, 'bbox_delta': bd}
+        if inputs['mode'] == 'eval':
+            bbox_prob = fluid.layers.softmax(bs, use_cudnn=False)
+            outs['bbox_prob'] = bbox_prob
         outs.update(bbox_feat_out)
         return outs
 

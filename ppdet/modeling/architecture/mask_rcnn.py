@@ -113,10 +113,7 @@ class MaskRCNN(fluid.dygraph.Layer):
 
     def post_processing(self, inputs):
         # used in infer
-        bbox_prob = fluid.layers.softmax(inputs['bbox_score'], use_cudnn=False)
-        inputs['bbox_prob'] == bbox_prob
-        outs = self.proposal.get_infer_bbox(inputs)
-        return outs
+        pass
 
     def build_inputs(self,
                      inputs,

@@ -6,7 +6,8 @@ from paddle.fluid.dygraph.base import to_variable
 
 from ppdet.core.workspace import register
 from ppdet.modeling.ops import (AnchorGenerator, ProposalGenerator,
-                                ProposalTargetGenerator, MaskTargetGenerator)
+                                ProposalTargetGenerator, MaskTargetGenerator,
+                                NMS)
 
 
 @register
@@ -138,31 +139,18 @@ class Mask(Layer):
 
 
 @register
-class InferPostProcess(object):
-    __shared__ = ['num_classes']
-
-    def __init__(self,
-                 num_classes=81,
-                 keep_top_k=100,
-                 score_threshold=0.05,
-                 nms_threshold=0.5,
-                 nms_type='MultiClassNMS'):
+class InferPostProcess(Layer):
+    def __init__(self, decoder=None, nms=NMS.__dict__):
         super(InferPostProcess, self).__init__()
-        self.num_classes = num_classes
-        self.keept_top_k = keep_top_k
-        self.score_threshold = score_threshold
-        self.nms_threshold = nms_threshold
-        self.nms_type = nms_type
+        self.nms = nms
+        if isinstance(nms, dict):
+            self.nms = NMS(**nms)
 
     def __call__(self, inputs):
-        # TODO: optim here
-        bbox_delta = inputs['bbox_delta'].numpy()
-        bbox_prob = inputs['bbox_prob'].numpy()
-        img_info = inputs['img_info'].numpy()
-        outs = get_nmsed_box(bbox_delta, bbox_prob, img_info, self.num_class,
-                             self.keep_top_k, self.score_threshold,
-                             self.nms_threshold)
-        outs = [to_variable(v) for v in outs]
-        for v in outs:
-            v.stop_gradient = True
+        # decode
+        # clip
+        # nms 
+        outs = self.nms(inputs['rpn_rois'], inputs['bbox_prob'],
+                        inputs['bbox_delta'], inputs['im_info'])
+        outs = {"predicted_bbox_nums": outs[0], "predicted_bbox": outs[1]}
         return outs

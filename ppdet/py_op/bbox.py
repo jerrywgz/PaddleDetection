@@ -63,7 +63,7 @@ def delta2bbox(deltas, boxes, weights, bbox_clip=4.13):
 
 
 @jit
-def compute_targets(bboxes1, bboxes2, labels, bbox_reg_weights):
+def compute_bbox_targets(bboxes1, bboxes2, labels, bbox_reg_weights):
     assert bboxes1.shape[0] == bboxes2.shape[0]
     assert bboxes1.shape[1] == 4
     assert bboxes2.shape[1] == 4

@@ -45,7 +45,7 @@ BBoxHead:
     feat_in: 1024
     feat_out: 512
     roi_extractor:
-      resolution: 14
+      resolution: 7
       sampling_ratio: 0
       spatial_scale: 0.0625
       extractor_type: 'RoIPool'
@@ -82,10 +82,11 @@ Proposal:
 
 # Infer
 InferPostProcess:
-  keep_top_k: 100
-  score_threshold: 0.05
-  nms_threshold: 0.5
-  nms_type: 'MultiClassNMS'
+  nms:
+    keep_top_k: 100
+    score_threshold: 0.05
+    nms_threshold: 0.5
+    nms_type: 'nms_with_decode'
 
 # Train
 LearningRate:

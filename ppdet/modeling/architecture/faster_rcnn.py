@@ -69,8 +69,8 @@ class FasterRCNN(Layer):
         # result  
         if self.gbd['mode'] == 'train':
             return self.loss(self.gbd)
-        elif self.gbd['mode'] == 'infer':
-            self.post_processing(self.gbd)
+        elif self.gbd['mode'] == 'eval':
+            self.infer(self.gbd)
         else:
             raise "Now, only support train or infer mode!"
 
@@ -96,12 +96,8 @@ class FasterRCNN(Layer):
         }
         return out
 
-    def post_processing(self, inputs):
-        # used in infer
-        bbox_prob = fluid.layers.softmax(inputs['bbox_score'], use_cudnn=False)
-        inputs['bbox_prob'] == bbox_prob
+    def infer(self, inputs):
         outs = self.infer_post_process(inputs)
-        outs = {'bbox_nums': outs[0], 'bbox_pred': outs[1]}
         return outs
 
     def build_inputs(
@@ -110,8 +106,7 @@ class FasterRCNN(Layer):
             #fields=['image', 'im_info', 'im_id', 'gt_bbox', 'gt_class', 'is_crowd']
             fields=['image', 'im_info', 'im_id', 'im_shape']):
         gbd = BufferDict()
-        with fluid.dygraph.guard():
-            for i, k in enumerate(fields):
-                v = to_variable(np.array([x[i] for x in inputs]))
-                gbd.set(k, v)
+        for i, k in enumerate(fields):
+            v = to_variable(np.array([x[i] for x in inputs]))
+            gbd.set(k, v)
         return gbd

@@ -11,6 +11,24 @@ from ppdet.modeling.ops import (AnchorGenerator, ProposalGenerator,
 
 
 @register
+class BBoxPostProcessor(Layer):
+    def __init__(self, decoder=None, nms=NMS.__dict__):
+        super(BBoxPostProcessor, self).__init__()
+        self.nms = nms
+        if isinstance(nms, dict):
+            self.nms = NMS(**nms)
+
+    def __call__(self, inputs):
+        # decode
+        # clip
+        # nms 
+        outs = self.nms(inputs['rpn_rois'], inputs['bbox_prob'],
+                        inputs['bbox_delta'], inputs['im_info'])
+        outs = {"predicted_bbox_nums": outs[0], "predicted_bbox": outs[1]}
+        return outs
+
+
+@register
 class Anchor(Layer):
     __inject__ = ['anchor_generator']
 
@@ -38,17 +56,22 @@ class Anchor(Layer):
         # TODO: mv from rpn_head to here 
         return {}
 
+    def post_process(self, ):
+        # TODO: whether move bbox post process to here 
+        pass
+
 
 @register
 class Proposal(Layer):
     __inject__ = [
-        'proposal_generator',
-        'proposal_target_generator',
+        'proposal_generator', 'proposal_target_generator', 'bbox_post_processor'
     ]
 
-    def __init__(self,
-                 proposal_generator=ProposalGenerator().__dict__,
-                 proposal_target_generator=ProposalTargetGenerator().__dict__):
+    def __init__(
+            self,
+            proposal_generator=ProposalGenerator().__dict__,
+            proposal_target_generator=ProposalTargetGenerator().__dict__,
+            bbox_post_processor=BBoxPostProcessor().__dict__, ):
         super(Proposal, self).__init__()
         self.proposal_generator = proposal_generator
         self.proposal_target_generator = proposal_target_generator
@@ -58,6 +81,8 @@ class Proposal(Layer):
         if isinstance(proposal_target_generator, dict):
             self.proposal_target_generator = ProposalTargetGenerator(
                 **proposal_target_generator)
+        if isinstance(bbox_post_processor, dict):
+            self.bbox_post_processor = BBoxPostProcessor(**bbox_post_processor)
 
     def forward(self, inputs):
         self.inputs = inputs
@@ -103,6 +128,9 @@ class Proposal(Layer):
         }
         return outs
 
+    def post_process(self, inputs):
+        return self.bbox_post_processor(inputs)
+
 
 @register
 class Mask(Layer):
@@ -117,9 +145,10 @@ class Mask(Layer):
 
     def forward(self, inputs):
         self.inputs = inputs
+        outs = {}
         if self.inputs['mode'] == 'train':
             outs = self.generate_mask_target()
-            return outs
+        return outs
 
     def generate_mask_target(self, ):
         outs = self.mask_target_generator(
@@ -135,22 +164,4 @@ class Mask(Layer):
             'rois_has_mask_int32': outs[1],
             'mask_int32': outs[2]
         }
-        return outs
-
-
-@register
-class InferPostProcess(Layer):
-    def __init__(self, decoder=None, nms=NMS.__dict__):
-        super(InferPostProcess, self).__init__()
-        self.nms = nms
-        if isinstance(nms, dict):
-            self.nms = NMS(**nms)
-
-    def __call__(self, inputs):
-        # decode
-        # clip
-        # nms 
-        outs = self.nms(inputs['rpn_rois'], inputs['bbox_prob'],
-                        inputs['bbox_delta'], inputs['im_info'])
-        outs = {"predicted_bbox_nums": outs[0], "predicted_bbox": outs[1]}
         return outs

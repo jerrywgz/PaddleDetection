@@ -13,6 +13,7 @@ from ppdet.core.workspace import load_config, merge_config, create
 from ppdet.data.reader import create_reader
 from ppdet.utils.check import check_gpu, check_version, check_config
 from ppdet.utils.cli import ArgsParser
+from ppdet.utils.eval_utils import coco_eval_results 
 
 
 def main(FLAGS):
@@ -40,19 +41,25 @@ def main(FLAGS):
     # Reader 
     eval_reader = create_reader(cfg.EvalReader, devices_num=devices_num)
 
-    # Eval 
+    # Eval
+    bbox_res = []
+    mask_res = []
     for iter_id, data in enumerate(eval_reader()):
         start_time = time.time()
 
         # forward 
-        outputs = model(data, mode='eval')
+        outs = model(data, mode='eval')
 
         # call eval 
-        cost_time = time.time() - start_time
+        bbox_res += get_det_res(1, outs['bbox_nums'], outs['bbox'], data)
+        if outs['mask'] is not None:
+            mask_res += get_seg_res(1, outs['bbox_nums'], outs['bbox'], outs['mask'], data)
 
         # log 
+        cost_time = time.time() - start_time
         print("Eval iter: {}, time: {}".format(iter_id, cost_time))
-
+    
+    coco_eval_results(bbox_res, mask_res)
 
 if __name__ == '__main__':
     parser = ArgsParser()

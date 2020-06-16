@@ -67,6 +67,10 @@ class MaskRCNN(fluid.dygraph.Layer):
         bbox_head_out = self.bbox_head(self.gbd)
         self.gbd.update(bbox_head_out)
 
+        if self.gbd['mode'] == 'eval':
+            bbox_out = self.proposal.post_process(self.gbd)
+            self.gbd.update(bbox_out)
+
         # Mask 
         mask_out = self.mask(self.gbd)
         self.gbd.update(mask_out)
@@ -79,7 +83,7 @@ class MaskRCNN(fluid.dygraph.Layer):
         if self.gbd['mode'] == 'train':
             return self.loss(self.gbd)
         elif self.gbd['mode'] == 'infer':
-            self.post_processing(self.gbd)
+            self.infer(self.gbd)
         else:
             raise "Now, only support train or infer mode!"
 
@@ -111,9 +115,16 @@ class MaskRCNN(fluid.dygraph.Layer):
         }
         return out
 
-    def post_processing(self, inputs):
+    def infer(self, inputs):
         # used in infer
-        pass
+        pred_bbox = inputs['predicted_bbox']
+        shape = reduce((lambda x, y: x * y), pred_bbox.shape)
+        shape = np.asarray(shape).reshape((1, 1))
+        ones = np.ones((1, 1), dtype=np.int32)
+        cond = (shape == ones).all()
+        if cond:
+            inputs['mask_logtis'] = pred_bbox
+        return inputs
 
     def build_inputs(self,
                      inputs,

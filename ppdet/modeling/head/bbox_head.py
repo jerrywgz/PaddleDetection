@@ -5,7 +5,6 @@ from paddle.fluid.param_attr import ParamAttr
 from paddle.fluid.initializer import Normal, MSRA
 from paddle.fluid.regularizer import L2Decay
 from paddle.fluid.dygraph.nn import Conv2D, Pool2D
-
 from ppdet.core.workspace import register
 from ..backbone.resnet import Blocks
 from ..ops import RoIExtractor
@@ -37,11 +36,16 @@ class BBoxFeat(Layer):
             rois = inputs['rpn_rois']
             rois_num = inputs['rpn_rois_nums']
         rois_feat = self.roi_extractor(inputs['res4'], rois, rois_num)
-        x = rois_feat
-        y_res5 = self.res5(x)
+        y_res5 = self.res5(rois_feat)
         y = self.res5_pool(y_res5)
         y = fluid.layers.squeeze(y, axes=[2, 3])
-        outs = {'rois_feat': rois_feat, 'res5': y_res5, "bbox_feat": y}
+        outs = {
+            'rois_feat': rois_feat,
+            'res5': y_res5,
+            "bbox_feat": y,
+            'shared_res5_block': self.res5,
+            'shared_roi_extractor': self.roi_extractor
+        }
         return outs
 
 

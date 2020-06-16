@@ -114,6 +114,8 @@ def main(FLAGS):
             save_name = str(
                 iter_id) if iter_id != cfg.max_iters - 1 else "model_final"
             save_dir = os.path.join(cfg.save_dir, cfg_name, save_name)
+            if not os.path.exists(save_dir):
+                os.makedirs(save_dir)
             fluid.dygraph.save_dygraph(model.state_dict(), save_dir)
             fluid.dygraph.save_dygraph(optimizer.state_dict(), save_dir)
 

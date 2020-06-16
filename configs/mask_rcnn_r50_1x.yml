@@ -3,10 +3,10 @@ use_gpu: true
 max_iters: 180000
 log_smooth_window: 20
 save_dir: output
-snapshot_iter: 1000 #10000
+snapshot_iter: 100 #10000
 pretrain_weights: https://paddle-imagenet-models-name.bj.bcebos.com/ResNet50_cos_pretrained.tar
 metric: COCO
-weights: output/faster_rcnn_r50_1x/model_final
+weights: output/mask_rcnn_r50_1x/100
 num_classes: 81
 
 # Model Achitecture
@@ -52,11 +52,12 @@ BBoxHead:
       extractor_type: 'RoIPool'
 
 MaskHead:
-  feat_out: 256
+  feat_in: 256
   resolution: 14
   mask_feat:
     feat_in: 2048
     feat_out: 256
+
 
 Anchor:
   anchor_generator:
@@ -87,6 +88,12 @@ Proposal:
     bg_thresh_lo: 0.0
     fg_fraction: 0.25
     fg_thresh: 0.5
+  bbox_post_processor: # used in infer
+    nms:
+      keep_top_k: 100
+      score_threshold: 0.05
+      nms_threshold: 0.5
+      nms_type: 'nms_with_decode'
 
 Mask:
   mask_target_generator:

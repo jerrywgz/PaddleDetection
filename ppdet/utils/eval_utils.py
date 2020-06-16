@@ -259,3 +259,11 @@ def json_eval_results(metric, json_directory=None, dataset=None):
             cocoapi_eval(v_json, coco_eval_style[i], anno_file=anno_file)
         else:
             logger.info("{} not exists!".format(v_json))
+
+
+def coco_eval_results(model_outs, ):
+    from ppdet.pyops.post_process import get_det_res, get_seg_res
+    bbox_res = []
+    mask_res = []
+    for mo in model_outs:
+        get_det_res(mo

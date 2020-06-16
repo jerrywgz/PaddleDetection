@@ -21,8 +21,11 @@ __all__ = ['FasterRCNN']
 class FasterRCNN(Layer):
     __category__ = 'architecture'
     __inject__ = [
-        'anchor', 'proposal', 'backbone', 'rpn_head', 'bbox_head',
-        'infer_post_process'
+        'anchor',
+        'proposal',
+        'backbone',
+        'rpn_head',
+        'bbox_head',
     ]
 
     def __init__(self,
@@ -31,7 +34,6 @@ class FasterRCNN(Layer):
                  backbone,
                  rpn_head,
                  bbox_head,
-                 infer_post_process,
                  rpn_only=False):
         super(FasterRCNN, self).__init__()
         self.anchor = anchor
@@ -39,7 +41,6 @@ class FasterRCNN(Layer):
         self.backbone = backbone
         self.rpn_head = rpn_head
         self.bbox_head = bbox_head
-        self.infer_post_process = infer_post_process
         self.rpn_only = rpn_only
 
     def forward(self, inputs, mode='train'):
@@ -66,10 +67,14 @@ class FasterRCNN(Layer):
         bbox_head_out = self.bbox_head(self.gbd)
         self.gbd.update(bbox_head_out)
 
+        if self.gbd['mode'] == 'infer':
+            bbox_out = self.proposal.post_process(inputs)
+            self.gbd.update(bbox_out)
+
         # result  
         if self.gbd['mode'] == 'train':
             return self.loss(self.gbd)
-        elif self.gbd['mode'] == 'eval':
+        elif self.gbd['mode'] == 'infer':
             self.infer(self.gbd)
         else:
             raise "Now, only support train or infer mode!"
@@ -97,7 +102,10 @@ class FasterRCNN(Layer):
         return out
 
     def infer(self, inputs):
-        outs = self.infer_post_process(inputs)
+        outs = {
+            "bbox": inputs['predicted_bbox'].numpy(),
+            'score': inputs['bbox_prob'].numpy()
+        }
         return outs
 
     def build_inputs(

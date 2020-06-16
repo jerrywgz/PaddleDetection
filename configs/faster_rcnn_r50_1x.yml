@@ -18,7 +18,6 @@ FasterRCNN:
   backbone: ResNet
   rpn_head: RPNHead
   bbox_head: BBoxHead
-  infer_post_process: InferPostProcess
 
 ResNet:
   norm_type: bn
@@ -69,8 +68,8 @@ Proposal:
     nms_thresh: 0.7
     train_pre_nms_top_n: 12000
     train_post_nms_top_n: 2000
-    infer_pre_nms_top_n: 12000
-    infer_post_nms_top_n: 2000
+    infer_pre_nms_top_n: 12000 # used in infer
+    infer_post_nms_top_n: 2000 # used in infer
     return_rois_num: True
   proposal_target_generator:
     batch_size_per_im: 512
@@ -79,14 +78,14 @@ Proposal:
     bg_thresh_lo: 0.0
     fg_fraction: 0.25
     fg_thresh: 0.5
+  bbox_post_processor: # used in infer
+    nms:
+      keep_top_k: 100
+      score_threshold: 0.05
+      nms_threshold: 0.5
+      nms_type: 'nms_with_decode'
 
 # Infer
-InferPostProcess:
-  nms:
-    keep_top_k: 100
-    score_threshold: 0.05
-    nms_threshold: 0.5
-    nms_type: 'nms_with_decode'
 
 # Train
 LearningRate:

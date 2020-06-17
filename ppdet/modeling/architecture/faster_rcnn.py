@@ -68,14 +68,14 @@ class FasterRCNN(Layer):
         self.gbd.update(bbox_head_out)
 
         if self.gbd['mode'] == 'infer':
-            bbox_out = self.proposal.post_process(inputs)
+            bbox_out = self.proposal.post_process(self.gbd)
             self.gbd.update(bbox_out)
 
         # result  
         if self.gbd['mode'] == 'train':
             return self.loss(self.gbd)
         elif self.gbd['mode'] == 'infer':
-            self.infer(self.gbd)
+            return self.infer(self.gbd)
         else:
             raise "Now, only support train or infer mode!"
 
@@ -84,14 +84,11 @@ class FasterRCNN(Layer):
         losses = []
         # RPN loss
         rpn_cls_loss, rpn_reg_loss = self.rpn_head.loss(inputs)
-
         # BBox loss
         bbox_cls_loss, bbox_reg_loss = self.bbox_head.loss(inputs)
-
         # Total loss 
         losses = [rpn_cls_loss, rpn_reg_loss, bbox_cls_loss, bbox_reg_loss]
         loss = fluid.layers.sum(losses)
-
         out = {
             'loss': loss,
             'loss_rpn_cls': rpn_cls_loss,
@@ -103,8 +100,8 @@ class FasterRCNN(Layer):
 
     def infer(self, inputs):
         outs = {
+            "bbox_nums": inputs['predicted_bbox_nums'].numpy(),
             "bbox": inputs['predicted_bbox'].numpy(),
-            'score': inputs['bbox_prob'].numpy()
         }
         return outs
 

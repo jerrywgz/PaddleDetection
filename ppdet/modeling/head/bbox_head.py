@@ -32,9 +32,12 @@ class BBoxFeat(Layer):
         if inputs['mode'] == 'train':
             rois = inputs['rois']
             rois_num = inputs['rois_nums']
-        elif inputs['mode'] == 'eval':
+        elif inputs['mode'] == 'infer':
             rois = inputs['rpn_rois']
             rois_num = inputs['rpn_rois_nums']
+        else:
+            raise "BBoxFeat only support train or infer mode!"
+
         rois_feat = self.roi_extractor(inputs['res4'], rois, rois_num)
         y_res5 = self.res5(rois_feat)
         y = self.res5_pool(y_res5)
@@ -90,7 +93,7 @@ class BBoxHead(Layer):
         bs = self.bbox_score(x)
         bd = self.bbox_delta(x)
         outs = {'bbox_score': bs, 'bbox_delta': bd}
-        if inputs['mode'] == 'eval':
+        if inputs['mode'] == 'infer':
             bbox_prob = fluid.layers.softmax(bs, use_cudnn=False)
             outs['bbox_prob'] = bbox_prob
         outs.update(bbox_feat_out)

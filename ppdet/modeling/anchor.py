@@ -7,24 +7,53 @@ from paddle.fluid.dygraph.base import to_variable
 from ppdet.core.workspace import register
 from ppdet.modeling.ops import (AnchorGenerator, ProposalGenerator,
                                 ProposalTargetGenerator, MaskTargetGenerator,
-                                NMS)
+                                DecodeClipNms)
+# TODO: modify here into ppdet.modeling.ops like DecodeClipNms 
+from ppdet.py_op.post_process import mask_post_process
 
 
 @register
-class BBoxPostProcessor(Layer):
-    def __init__(self, decoder=None, nms=NMS.__dict__):
-        super(BBoxPostProcessor, self).__init__()
+class BBoxPostProcess(Layer):
+    def __init__(self,
+                 decode=None,
+                 clip=None,
+                 nms=None,
+                 decode_clip_nms=DecodeClipNms().__dict__):
+        super(BBoxPostProcess, self).__init__()
+        self.decode = decode
+        self.clip = clip
         self.nms = nms
-        if isinstance(nms, dict):
-            self.nms = NMS(**nms)
+        self.decode_clip_nms = decode_clip_nms
+        if isinstance(decode_clip_nms, dict):
+            self.decode_clip_nms = DecodeClipNms(**decode_clip_nms)
 
     def __call__(self, inputs):
+        # TODO: split into 3 steps
+        # TODO: modify related ops for deploying
         # decode
         # clip
-        # nms 
-        outs = self.nms(inputs['rpn_rois'], inputs['bbox_prob'],
-                        inputs['bbox_delta'], inputs['im_info'])
+        # nms
+        outs = self.decode_clip_nms(inputs['rpn_rois'], inputs['bbox_prob'],
+                                    inputs['bbox_delta'], inputs['im_info'])
         outs = {"predicted_bbox_nums": outs[0], "predicted_bbox": outs[1]}
+        return outs
+
+
+@register
+class MaskPostProcess(object):
+    __shared__ = ['num_classes']
+
+    def __init__(self, num_classes=81):
+        super(MaskPostProcess, self).__init__()
+        self.num_classes = num_classes
+
+    def __call__(self, inputs):
+        # TODO: modify related ops for deploying
+        outs = mask_post_process(inputs['predicted_bbox_nums'].numpy(),
+                                 inputs['predicted_bbox'].numpy(),
+                                 inputs['mask_logits'].numpy(),
+                                 inputs['im_info'].numpy())
+        outs = {'predicted_mask': outs}
         return outs
 
 
@@ -64,25 +93,25 @@ class Anchor(Layer):
 @register
 class Proposal(Layer):
     __inject__ = [
-        'proposal_generator', 'proposal_target_generator', 'bbox_post_processor'
+        'proposal_generator', 'proposal_target_generator', 'bbox_post_process'
     ]
 
     def __init__(
             self,
             proposal_generator=ProposalGenerator().__dict__,
             proposal_target_generator=ProposalTargetGenerator().__dict__,
-            bbox_post_processor=BBoxPostProcessor().__dict__, ):
+            bbox_post_process=BBoxPostProcess().__dict__, ):
         super(Proposal, self).__init__()
         self.proposal_generator = proposal_generator
         self.proposal_target_generator = proposal_target_generator
-
+        self.bbox_post_process = bbox_post_process
         if isinstance(proposal_generator, dict):
             self.proposal_generator = ProposalGenerator(**proposal_generator)
         if isinstance(proposal_target_generator, dict):
             self.proposal_target_generator = ProposalTargetGenerator(
                 **proposal_target_generator)
-        if isinstance(bbox_post_processor, dict):
-            self.bbox_post_processor = BBoxPostProcessor(**bbox_post_processor)
+        if isinstance(bbox_post_process, dict):
+            self.bbox_post_process = BBoxPostProcess(**bbox_post_process)
 
     def forward(self, inputs):
         self.inputs = inputs
@@ -129,19 +158,25 @@ class Proposal(Layer):
         return outs
 
     def post_process(self, inputs):
-        return self.bbox_post_processor(inputs)
+        outs = self.bbox_post_process(inputs)
+        return outs
 
 
 @register
 class Mask(Layer):
-    __inject__ = ['mask_target_generator']
+    __inject__ = ['mask_target_generator', 'mask_post_process']
 
-    def __init__(self, mask_target_generator=MaskTargetGenerator().__dict__):
+    def __init__(self,
+                 mask_target_generator=MaskTargetGenerator().__dict__,
+                 mask_post_process=MaskPostProcess().__dict__):
         super(Mask, self).__init__()
         self.mask_target_generator = mask_target_generator
+        self.mask_post_process = mask_post_process
         if isinstance(mask_target_generator, dict):
             self.mask_target_generator = MaskTargetGenerator(
                 **mask_target_generator)
+        if isinstance(mask_post_process, dict):
+            self.mask_post_process = MaskPostProcess(**mask_post_process)
 
     def forward(self, inputs):
         self.inputs = inputs
@@ -164,4 +199,8 @@ class Mask(Layer):
             'rois_has_mask_int32': outs[1],
             'mask_int32': outs[2]
         }
+        return outs
+
+    def post_process(self, inputs):
+        outs = self.mask_post_process(inputs)
         return outs

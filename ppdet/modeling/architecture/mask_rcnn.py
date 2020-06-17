@@ -67,7 +67,7 @@ class MaskRCNN(fluid.dygraph.Layer):
         bbox_head_out = self.bbox_head(self.gbd)
         self.gbd.update(bbox_head_out)
 
-        if self.gbd['mode'] == 'eval':
+        if self.gbd['mode'] == 'infer':
             bbox_out = self.proposal.post_process(self.gbd)
             self.gbd.update(bbox_out)
 
@@ -78,6 +78,10 @@ class MaskRCNN(fluid.dygraph.Layer):
         # Mask Head 
         mask_head_out = self.mask_head(self.gbd)
         self.gbd.update(mask_head_out)
+
+        if self.gbd['mode'] == 'infer':
+            mask_out = self.mask.post_process(self.gbd)
+            self.gbd.update(mask_out)
 
         # result  
         if self.gbd['mode'] == 'train':
@@ -92,19 +96,15 @@ class MaskRCNN(fluid.dygraph.Layer):
         losses = []
         # RPN loss
         rpn_cls_loss, rpn_reg_loss = self.rpn_head.loss(inputs)
-
         # BBox loss
         bbox_cls_loss, bbox_reg_loss = self.bbox_head.loss(inputs)
-
         # Mask loss 
         mask_loss = self.mask_head.loss(inputs)
-
         # Total loss 
         losses = [
             rpn_cls_loss, rpn_reg_loss, bbox_cls_loss, bbox_reg_loss, mask_loss
         ]
         loss = fluid.layers.sum(losses)
-
         out = {
             'loss': loss,
             'loss_rpn_cls': rpn_cls_loss,
@@ -117,13 +117,12 @@ class MaskRCNN(fluid.dygraph.Layer):
 
     def infer(self, inputs):
         # used in infer
-        pred_bbox = inputs['predicted_bbox']
-        shape = reduce((lambda x, y: x * y), pred_bbox.shape)
-        shape = np.asarray(shape).reshape((1, 1))
-        ones = np.ones((1, 1), dtype=np.int32)
-        cond = (shape == ones).all()
-        if cond:
-            inputs['mask_logtis'] = pred_bbox
+        outs = {
+            'bbox_nums': inputs['predicted_bbox_nums'].numpy(),
+            'bbox': inputs['predicted_bbox'].numpy(),
+            'mask': inputs['predicted_mask'].numpy()
+        }
+        print(outs['bbox'].shape, outs['mask'].shape)
         return inputs
 
     def build_inputs(self,

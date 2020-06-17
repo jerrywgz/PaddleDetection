@@ -4,7 +4,7 @@ import paddle.fluid as fluid
 from paddle.fluid.dygraph.base import to_variable
 from ppdet.core.workspace import register, serializable
 from ppdet.py_op.target import generate_rpn_anchor_target, generate_proposal_target, generate_mask_target
-from ppdet.py_op.post_process import get_nmsed_bbox
+from ppdet.py_op.post_process import bbox_post_process
 
 
 @register
@@ -250,33 +250,31 @@ class RoIExtractor(object):
 
 @register
 @serializable
-class NMS(object):
+class DecodeClipNms(object):
     __shared__ = ['num_classes']
 
-    def __init__(self,
-                 num_classes=81,
-                 keep_top_k=100,
-                 score_threshold=0.05,
-                 nms_threshold=0.5,
-                 nms_type='nms_with_decode'):
-        super(NMS, self).__init__()
+    def __init__(
+            self,
+            num_classes=81,
+            keep_top_k=100,
+            score_threshold=0.05,
+            nms_threshold=0.5, ):
+        super(DecodeClipNms, self).__init__()
         self.num_classes = num_classes
         self.keep_top_k = keep_top_k
         self.score_threshold = score_threshold
         self.nms_threshold = nms_threshold
-        self.nms_type = nms_type
 
     def __call__(self, bbox, bbox_prob, bbox_delta, img_info):
-        if self.nms_type == 'nms_with_decode':
-            outs = get_nmsed_bbox(bbox.numpy(),
-                                  bbox_prob.numpy(),
-                                  bbox_delta.numpy(),
-                                  img_info.numpy(), self.keep_top_k,
-                                  self.score_threshold, self.nms_threshold,
-                                  self.num_classes)
-            outs = [to_variable(v) for v in outs]
-            #for v in outs:
-            #    v.stop_gradient = True
+        outs = bbox_post_process(bbox.numpy(),
+                                 bbox_prob.numpy(),
+                                 bbox_delta.numpy(),
+                                 img_info.numpy(), self.keep_top_k,
+                                 self.score_threshold, self.nms_threshold,
+                                 self.num_classes)
+        outs = [to_variable(v) for v in outs]
+        for v in outs:
+            v.stop_gradient = True
         return outs
 
 

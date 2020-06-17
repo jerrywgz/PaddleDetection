@@ -261,9 +261,30 @@ def json_eval_results(metric, json_directory=None, dataset=None):
             logger.info("{} not exists!".format(v_json))
 
 
-def coco_eval_results(model_outs, ):
-    from ppdet.pyops.post_process import get_det_res, get_seg_res
-    bbox_res = []
-    mask_res = []
-    for mo in model_outs:
-        get_det_res(mo
+def coco_eval_results(bbox_res=None, mask_res=None):
+    print("start evaluate bbox using coco api")
+    from pycocotools.coco import COCO
+    from pycocotools.cocoeval import COCOeval
+    anno_file = "/home/ai/dataset/COCO17/annotations/instances_train2017.json"
+    cocoGt = COCO(anno_file)
+
+    if bbox_res is not None and len(bbox_res) > 0:
+        with io.open("bbox_eval.json", 'w') as outfile:
+            encode_func = unicode if six.PY2 else str
+            outfile.write(encode_func(json.dumps(bbox_res)))
+
+        cocoDt = cocoGt.loadRes("bbox_eval.json")
+        cocoEval = COCOeval(cocoGt, cocoDt, 'bbox')
+        cocoEval.evaluate()
+        cocoEval.accumulate()
+        cocoEval.summarize()
+
+    if mask_res is not None and len(mask_res) > 0:
+        with io.open("mask_eval.json", 'w') as outfile:
+            encode_func = unicode if six.PY2 else str
+            outfile.write(encode_func(json.dumps(bbox_res)))
+
+        cocoSg = cocoGt.loadRes("mask_eval.json")
+        cocoEval = COCOeval(cocoGt, cocoSg, 'bbox')
+        cocoEval.evaluate()
+        cocoEval.accumulate()

@@ -6,7 +6,7 @@ save_dir: output
 snapshot_iter: 100
 pretrain_weights: https://paddle-imagenet-models-name.bj.bcebos.com/ResNet50_cos_pretrained.tar
 metric: COCO
-weights: output/faster_rcnn_r50_1x/1000 #model_final
+weights: output/faster_rcnn_r50_1x/1400 #model_final
 num_classes: 81
 
 # Model Achitecture
@@ -78,12 +78,11 @@ Proposal:
     bg_thresh_lo: 0.0
     fg_fraction: 0.25
     fg_thresh: 0.5
-  bbox_post_processor: # used in infer
-    nms:
+  bbox_post_process: # used in infer
+    decode_clip_nms:
       keep_top_k: 100
       score_threshold: 0.05
       nms_threshold: 0.5
-      nms_type: 'nms_with_decode'
 
 # Infer
 

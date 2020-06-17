@@ -63,37 +63,39 @@ def delta2bbox(deltas, boxes, weights, bbox_clip=4.13):
 
 
 @jit
-def compute_bbox_targets(bboxes1, bboxes2, labels, bbox_reg_weights):
-    assert bboxes1.shape[0] == bboxes2.shape[0]
-    assert bboxes1.shape[1] == 4
-    assert bboxes2.shape[1] == 4
+def expand_bbox(bboxes, scale):
+    w_half = (bboxes[:, 2] - bboxes[:, 0]) * .5
+    h_half = (bboxes[:, 3] - bboxes[:, 1]) * .5
+    x_c = (bboxes[:, 2] + bboxes[:, 0]) * .5
+    y_c = (bboxes[:, 3] + bboxes[:, 1]) * .5
 
-    targets = np.zeros(bboxes1.shape)
-    bbox_reg_weights = np.asarray(bbox_reg_weights)
-    targets = bbox2delta(
-        bboxes1=bboxes1, bboxes2=bboxes2, weights=bbox_reg_weights)
+    w_half *= scale
+    h_half *= scale
 
-    return np.hstack([labels[:, np.newaxis], targets]).astype(
-        np.float32, copy=False)
+    bboxes_exp = np.zeros(bboxes.shape)
+    bboxes_exp[:, 0] = x_c - w_half
+    bboxes_exp[:, 2] = x_c + w_half
+    bboxes_exp[:, 1] = y_c - h_half
+    bboxes_exp[:, 3] = y_c + h_half
+
+    return bboxes_exp
 
 
 @jit
-def expand_bbox_targets(bbox_targets_input,
-                        class_nums=81,
-                        is_cls_agnostic=False):
-    class_labels = bbox_targets_input[:, 0]
-    fg_inds = np.where(class_labels > 0)[0]
-    if not is_cls_agnostic:
-        class_nums = 2
-    bbox_targets = np.zeros((class_labels.shape[0], 4 * class_nums))
-    bbox_inside_weights = np.zeros(bbox_targets.shape)
-    for ind in fg_inds:
-        class_label = int(class_labels[ind]) if not is_cls_agnostic else 1
-        start_ind = class_label * 4
-        end_ind = class_label * 4 + 4
-        bbox_targets[ind, start_ind:end_ind] = bbox_targets_input[ind, 1:]
-        bbox_inside_weights[ind, start_ind:end_ind] = (1.0, 1.0, 1.0, 1.0)
-    return bbox_targets, bbox_inside_weights
+def clip_bbox(boxes, im_shape):
+    assert boxes.shape[1] % 4 == 0, \
+        'boxes.shape[1] is {:d}, but must be divisible by 4.'.format(
+        boxes.shape[1]
+    )
+    # x1 >= 0
+    boxes[:, 0::4] = np.maximum(np.minimum(boxes[:, 0::4], im_shape[1] - 1), 0)
+    # y1 >= 0
+    boxes[:, 1::4] = np.maximum(np.minimum(boxes[:, 1::4], im_shape[0] - 1), 0)
+    # x2 < im_shape[1]
+    boxes[:, 2::4] = np.maximum(np.minimum(boxes[:, 2::4], im_shape[1] - 1), 0)
+    # y2 < im_shape[0]
+    boxes[:, 3::4] = np.maximum(np.minimum(boxes[:, 3::4], im_shape[0] - 1), 0)
+    return boxes
 
 
 @jit
@@ -163,85 +165,97 @@ def nms(dets, thresh):
     return np.where(suppressed == 0)[0]
 
 
-@jit
-def expand_bbox(bboxes, scale):
-    """Expand an array of bboxes by a given scale."""
-    w_half = (bboxes[:, 2] - bboxes[:, 0]) * .5
-    h_half = (bboxes[:, 3] - bboxes[:, 1]) * .5
-    x_c = (bboxes[:, 2] + bboxes[:, 0]) * .5
-    y_c = (bboxes[:, 3] + bboxes[:, 1]) * .5
+def nms_with_decode(bboxes,
+                    bbox_probs,
+                    bbox_deltas,
+                    im_info,
+                    keep_top_k=100,
+                    score_thresh=0.05,
+                    nms_thresh=0.5,
+                    class_nums=81,
+                    bbox_reg_weights=[0.1, 0.1, 0.2, 0.2]):
+    bboxes_num = [0, bboxes.shape[0]]
+    bboxes_v = np.array(bboxes)
+    bbox_probs_v = np.array(bbox_probs)
+    bbox_deltas_v = np.array(bbox_deltas)
+    variance_v = np.array(bbox_reg_weights)
+    im_results = [[] for _ in range(len(bboxes_num) - 1)]
+    new_bboxes_num = [0]
+    for i in range(len(bboxes_num) - 1):
+        start = bboxes_num[i]
+        end = bboxes_num[i + 1]
+        if start == end:
+            continue
 
-    w_half *= scale
-    h_half *= scale
+        bbox_deltas_n = bbox_deltas_v[start:end, :]  # box delta 
+        rois_n = bboxes_v[start:end, :]  # box 
+        rois_n = rois_n / im_info[i][2]  # scale 
+        rois_n = delta2bbox(bbox_deltas_n, rois_n, variance_v)
+        rois_n = clip_bbox(rois_n, im_info[i][:2] / im_info[i][2])
+        cls_boxes = [[] for _ in range(class_nums)]
+        scores_n = bbox_probs_v[start:end, :]
+        for j in range(1, class_nums):
+            inds = np.where(scores_n[:, j] > score_thresh)[0]
+            scores_j = scores_n[inds, j]
+            rois_j = rois_n[inds, j * 4:(j + 1) * 4]
+            dets_j = np.hstack((scores_j[:, np.newaxis], rois_j)).astype(
+                np.float32, copy=False)
+            keep = nms(dets_j, nms_thresh)
+            nms_dets = dets_j[keep, :]
+            #add labels
+            label = np.array([j for _ in range(len(keep))])
+            nms_dets = np.hstack((label[:, np.newaxis], nms_dets)).astype(
+                np.float32, copy=False)
+            cls_boxes[j] = nms_dets
 
-    bboxes_exp = np.zeros(bboxes.shape)
-    bboxes_exp[:, 0] = x_c - w_half
-    bboxes_exp[:, 2] = x_c + w_half
-    bboxes_exp[:, 1] = y_c - h_half
-    bboxes_exp[:, 3] = y_c + h_half
-
-    return bboxes_exp
-
-
-@jit
-def clip_tiled_bbox(boxes, im_shape):
-    """Clip boxes to image boundaries. im_shape is [height, width] and boxes
-    has shape (N, 4 * num_tiled_boxes)."""
-    assert boxes.shape[1] % 4 == 0, \
-        'boxes.shape[1] is {:d}, but must be divisible by 4.'.format(
-        boxes.shape[1]
-    )
-    # x1 >= 0
-    boxes[:, 0::4] = np.maximum(np.minimum(boxes[:, 0::4], im_shape[1] - 1), 0)
-    # y1 >= 0
-    boxes[:, 1::4] = np.maximum(np.minimum(boxes[:, 1::4], im_shape[0] - 1), 0)
-    # x2 < im_shape[1]
-    boxes[:, 2::4] = np.maximum(np.minimum(boxes[:, 2::4], im_shape[1] - 1), 0)
-    # y2 < im_shape[0]
-    boxes[:, 3::4] = np.maximum(np.minimum(boxes[:, 3::4], im_shape[0] - 1), 0)
-    return boxes
-
-
-@jit
-def clip_xyxy_to_image(x1, y1, x2, y2, height, width):
-    """Clip coordinates to an image with the given height and width."""
-    x1 = np.minimum(width - 1., np.maximum(0., x1))
-    y1 = np.minimum(height - 1., np.maximum(0., y1))
-    x2 = np.minimum(width - 1., np.maximum(0., x2))
-    y2 = np.minimum(height - 1., np.maximum(0., y2))
-    return x1, y1, x2, y2
-
-
-@jit
-def xyxy_to_xywh(xyxy):
-    """Convert [x1 y1 x2 y2] box format to [x1 y1 w h] format."""
-    if isinstance(xyxy, (list, tuple)):
-        # Single box given as a list of coordinates
-        assert len(xyxy) == 4
-        x1, y1 = xyxy[0], xyxy[1]
-        w = xyxy[2] - x1 + 1
-        h = xyxy[3] - y1 + 1
-        return (x1, y1, w, h)
-    elif isinstance(xyxy, np.ndarray):
-        # Multiple bboxes given as a 2D ndarray
-        return np.hstack((xyxy[:, 0:2], xyxy[:, 2:4] - xyxy[:, 0:2] + 1))
-    else:
-        raise TypeError('Argument xyxy must be a list, tuple, or numpy array.')
+        # Limit to max_per_image detections **over all classes**
+        image_scores = np.hstack(
+            [cls_boxes[j][:, 1] for j in range(1, class_nums)])
+        if len(image_scores) > keep_top_k:
+            image_thresh = np.sort(image_scores)[-keep_top_k]
+            for j in range(1, class_nums):
+                keep = np.where(cls_boxes[j][:, 1] >= image_thresh)[0]
+                cls_boxes[j] = cls_boxes[j][keep, :]
+        im_results_n = np.vstack([cls_boxes[j] for j in range(1, class_nums)])
+        im_results[i] = im_results_n
+        new_bboxes_num.append(len(im_results_n) + new_bboxes_num[-1])
+        labels = im_results_n[:, 0]
+        scores = im_results_n[:, 1]
+        boxes = im_results_n[:, 2:]
+    im_results = np.vstack([im_results[k] for k in range(len(bboxes_num) - 1)])
+    new_bboxes_num = np.array(new_bboxes_num)
+    return new_bboxes_num, im_results
 
 
 @jit
-def xywh_to_xyxy(xywh):
-    """Convert [x1 y1 w h] box format to [x1 y1 x2 y2] format."""
-    if isinstance(xywh, (list, tuple)):
-        # Single box given as a list of coordinates
-        assert len(xywh) == 4
-        x1, y1 = xywh[0], xywh[1]
-        x2 = x1 + np.maximum(0., xywh[2] - 1.)
-        y2 = y1 + np.maximum(0., xywh[3] - 1.)
-        return (x1, y1, x2, y2)
-    elif isinstance(xywh, np.ndarray):
-        # Multiple bboxes given as a 2D ndarray
-        return np.hstack(
-            (xywh[:, 0:2], xywh[:, 0:2] + np.maximum(0, xywh[:, 2:4] - 1)))
-    else:
-        raise TypeError('Argument xywh must be a list, tuple, or numpy array.')
+def compute_bbox_targets(bboxes1, bboxes2, labels, bbox_reg_weights):
+    assert bboxes1.shape[0] == bboxes2.shape[0]
+    assert bboxes1.shape[1] == 4
+    assert bboxes2.shape[1] == 4
+
+    targets = np.zeros(bboxes1.shape)
+    bbox_reg_weights = np.asarray(bbox_reg_weights)
+    targets = bbox2delta(
+        bboxes1=bboxes1, bboxes2=bboxes2, weights=bbox_reg_weights)
+
+    return np.hstack([labels[:, np.newaxis], targets]).astype(
+        np.float32, copy=False)
+
+
+@jit
+def expand_bbox_targets(bbox_targets_input,
+                        class_nums=81,
+                        is_cls_agnostic=False):
+    class_labels = bbox_targets_input[:, 0]
+    fg_inds = np.where(class_labels > 0)[0]
+    if not is_cls_agnostic:
+        class_nums = 2
+    bbox_targets = np.zeros((class_labels.shape[0], 4 * class_nums))
+    bbox_inside_weights = np.zeros(bbox_targets.shape)
+    for ind in fg_inds:
+        class_label = int(class_labels[ind]) if not is_cls_agnostic else 1
+        start_ind = class_label * 4
+        end_ind = class_label * 4 + 4
+        bbox_targets[ind, start_ind:end_ind] = bbox_targets_input[ind, 1:]
+        bbox_inside_weights[ind, start_ind:end_ind] = (1.0, 1.0, 1.0, 1.0)
+    return bbox_targets, bbox_inside_weights

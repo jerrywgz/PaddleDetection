@@ -13,7 +13,8 @@ from ppdet.core.workspace import load_config, merge_config, create
 from ppdet.data.reader import create_reader
 from ppdet.utils.check import check_gpu, check_version, check_config
 from ppdet.utils.cli import ArgsParser
-from ppdet.utils.eval_utils import coco_eval_results 
+from ppdet.py_op.post_process import get_det_res, get_seg_res
+from ppdet.utils.eval_utils import coco_eval_results
 
 
 def main(FLAGS):
@@ -41,6 +42,12 @@ def main(FLAGS):
     # Reader 
     eval_reader = create_reader(cfg.EvalReader, devices_num=devices_num)
 
+    # TODO: optim here  
+    anno_file = "/home/ai/dataset/COCO17/annotations/instances_train2017.json"
+    from pycocotools.coco import COCO
+    coco_gt = COCO(anno_file)
+    catid = {i + 1: v for i, v in enumerate(coco_gt.getCatIds())}
+    batch_size = 1
     # Eval
     bbox_res = []
     mask_res = []
@@ -48,18 +55,21 @@ def main(FLAGS):
         start_time = time.time()
 
         # forward 
-        outs = model(data, mode='eval')
+        outs = model(data, mode='infer')
 
         # call eval 
-        bbox_res += get_det_res(1, outs['bbox_nums'], outs['bbox'], data)
-        if outs['mask'] is not None:
-            mask_res += get_seg_res(1, outs['bbox_nums'], outs['bbox'], outs['mask'], data)
+        bbox_res += get_det_res(batch_size, outs['bbox_nums'], outs['bbox'],
+                                data, catid)
+        if 'mask' in outs.keys():
+            mask_res += get_seg_res(batch_size, outs['bbox_nums'], outs['bbox'],
+                                    outs['mask'], data, catid)
 
         # log 
         cost_time = time.time() - start_time
         print("Eval iter: {}, time: {}".format(iter_id, cost_time))
-    
+
     coco_eval_results(bbox_res, mask_res)
+
 
 if __name__ == '__main__':
     parser = ArgsParser()

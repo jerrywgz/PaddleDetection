@@ -40,7 +40,7 @@ class MaskFeat(Layer):
         if inputs['mode'] == 'train':
             x = inputs['res5']
             rois_feat = fluid.layers.gather(x, inputs['rois_has_mask_int32'])
-        elif inputs['mode'] == 'eval':
+        elif inputs['mode'] == 'infer':
             rois = inputs['predicted_bbox'][:, 2:] * inputs['im_info'][:, 2]
             rois_num = inputs['predicted_bbox_nums']
             # TODO: optim here 
@@ -86,14 +86,21 @@ class MaskHead(Layer):
 
     def forward(self, inputs):
         # feat 
-        mask_feat_out = self.mask_feat(inputs)
-        x = mask_feat_out['mask_feat']
+        outs = self.mask_feat(inputs)
+        x = outs['mask_feat']
         # logits 
-        y = self.mask_fcn_logits(y)
-        if inputs['mode'] == 'train':
-            y = fluid.layers.sigmoid(y, name='mask_logits_sigmoid')
-        outs = {'mask_logits': y}
-        outs.update(mask_feat_out)
+        mask_logits = self.mask_fcn_logits(x)
+        if inputs['mode'] == 'infer':
+            pred_bbox = inputs['predicted_bbox']
+            shape = reduce((lambda x, y: x * y), pred_bbox.shape)
+            shape = np.asarray(shape).reshape((1, 1))
+            ones = np.ones((1, 1), dtype=np.int32)
+            cond = (shape == ones).all()
+            if cond:
+                mask_logits = pred_bbox
+
+        outs['mask_logits'] = mask_logits
+
         return outs
 
     def loss(self, inputs):

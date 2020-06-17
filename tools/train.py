@@ -13,6 +13,7 @@ from ppdet.core.workspace import load_config, merge_config, create
 from ppdet.data.reader import create_reader
 from ppdet.utils.check import check_gpu, check_version, check_config
 from ppdet.utils.cli import ArgsParser
+from ppdet.utils.checkpoint import load_dygraph_ckpt, save_dygraph_ckpt
 
 
 def main(FLAGS):
@@ -53,34 +54,7 @@ def main(FLAGS):
         strategy = fluid.dygraph.parallel.prepare_context()
         model = fluid.dygraph.parallel.DataParallel(model, strategy)
 
-    if False:
-        model_state = model.state_dict()
-        w_dict = np.load(cfg.pretrained_model)
-        for k, v in w_dict.items():
-            for wk in model_state.keys():
-                res = re.search(k, wk)
-                if res is not None:
-                    print("load: ", k, v.shape, np.mean(np.abs(v)), " --> ", wk,
-                          model_state[wk].shape)
-                    model_state[wk] = v
-                    break
-        model.set_dict(model_state)
-
-    elif False:
-        para_state_dict, _ = fluid.load_dygraph(cfg.resume_model)
-        model.set_dict(para_state_dict)
-        new_dict = {}
-        for k, v in para_state_dict.items():
-            if "conv2d" in k:
-                new_k = k.split('.')[1]
-            elif 'linear' in k:
-                new_k = k.split('.')[1]
-            elif 'conv2dtranspose' in k:
-                new_k = k.split('.')[1]
-            else:
-                new_k = k
-            new_dict[new_k] = v.numpy()
-        np.savez("rcnn_dyg.npz", **new_dict)
+    model = load_dygraph_ckpt(model, pretrain_ckpt=cfg.pretrain_weights)
 
     start_iter = 0
     train_reader = create_reader(
@@ -114,10 +88,7 @@ def main(FLAGS):
             save_name = str(
                 iter_id) if iter_id != cfg.max_iters - 1 else "model_final"
             save_dir = os.path.join(cfg.save_dir, cfg_name, save_name)
-            if not os.path.exists(save_dir):
-                os.makedirs(save_dir)
-            fluid.dygraph.save_dygraph(model.state_dict(), save_dir)
-            fluid.dygraph.save_dygraph(optimizer.state_dict(), save_dir)
+            save_dygraph_ckpt(model, optimizer, save_dir)
 
 
 if __name__ == '__main__':

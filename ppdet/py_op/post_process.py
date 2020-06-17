@@ -120,7 +120,12 @@ def mask_post_process(bbox_nums, bboxes, masks, im_info):
 
 
 @jit
-def get_det_res(batch_size, bbox_nums, bbox, data, num_id_to_cat_id_map):
+def get_det_res(bbox_nums,
+                bbox,
+                image_id,
+                image_shape,
+                num_id_to_cat_id_map,
+                batch_size=1):
     det_res = []
     bbox_v = np.array(bbox)
     if bbox_v.shape == (
@@ -133,10 +138,9 @@ def get_det_res(batch_size, bbox_nums, bbox, data, num_id_to_cat_id_map):
     k = 0
     for i in range(batch_size):
         dt_num_this_img = bbox_nums[i + 1] - bbox_nums[i]
-        # TODO: whether return data from model out 
-        image_id = int(data[i][2])
-        image_width = int(data[i][-1][1])
-        image_height = int(data[i][-1][2])
+        image_id = int(image_id[i][0])
+        image_width = int(image_shape[i][1])  #int(data[i][-1][1])
+        image_height = int(image_shape[i][2])  #int(data[i][-1][2])
         for j in range(dt_num_this_img):
             dt = bbox_v[k]
             k = k + 1
@@ -156,13 +160,13 @@ def get_det_res(batch_size, bbox_nums, bbox, data, num_id_to_cat_id_map):
 
 
 @jit
-def get_seg_res(batch_size, mask_nums, mask, data, num_id_to_cat_id_map):
+def get_seg_res(mask_nums, mask, image_id, num_id_to_cat_id_map, batch_size=1):
     seg_res = []
     mask_v = np.array(mask)
     k = 0
     for i in range(batch_size):
+        image_id = int(image_id[i][0])
         dt_num_this_img = mask_nums[i + 1] - mask_nums[i]
-        image_id = int(data[i][2])
         for j in range(dt_num_this_img):
             dt = mask_v[k]
             k = k + 1

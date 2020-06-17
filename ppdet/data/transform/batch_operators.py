@@ -83,7 +83,7 @@ class PadBatch(BaseOperator):
 
         if self.pad_gt:
             gt_num = []
-            if data['gt_poly'] is not None:
+            if data['gt_poly'] is not None and len(data['gt_poly']) > 0:
                 pad_mask = True
             else:
                 pad_mask = False

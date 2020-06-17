@@ -40,35 +40,25 @@ def main(FLAGS):
     model.set_dict(param_state_dict)
 
     # Reader 
-    eval_reader = create_reader(cfg.EvalReader, devices_num=devices_num)
+    eval_reader = create_reader(cfg.EvalReader, devices_num=1)
 
-    # TODO: optim here  
-    anno_file = "/home/ai/dataset/COCO17/annotations/instances_train2017.json"
-    from pycocotools.coco import COCO
-    coco_gt = COCO(anno_file)
-    catid = {i + 1: v for i, v in enumerate(coco_gt.getCatIds())}
-    batch_size = 1
     # Eval
-    bbox_res = []
-    mask_res = []
+    outs_res = []
     for iter_id, data in enumerate(eval_reader()):
         start_time = time.time()
 
         # forward 
         outs = model(data, mode='infer')
 
-        # call eval 
-        bbox_res += get_det_res(batch_size, outs['bbox_nums'], outs['bbox'],
-                                data, catid)
-        if 'mask' in outs.keys():
-            mask_res += get_seg_res(batch_size, outs['bbox_nums'], outs['bbox'],
-                                    outs['mask'], data, catid)
+        # call eval
+        outs_res.append(outs)
 
         # log 
         cost_time = time.time() - start_time
         print("Eval iter: {}, time: {}".format(iter_id, cost_time))
 
-    coco_eval_results(bbox_res, mask_res)
+    coco_eval_results(
+        outs_res, include_mask=True if 'MaskHed' in cfg else False)
 
 
 if __name__ == '__main__':

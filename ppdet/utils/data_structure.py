@@ -13,10 +13,16 @@ class BufferDict(dict):
             self[k] = v
 
     def get(self, key):
-        return self.__getitem__(key)
+        if key in self.keys():
+            return self.__getitem__(key)
+        else:
+            raise "The %s is already in global inputs dict" % key
 
     def set(self, key, value):
-        self.__setitem__(key, value)
+        if key not in self.keys():
+            self.__setitem__(key, value)
+        else:
+            raise "The %s is already in global inputs dict" % key
 
 
 '''

@@ -66,7 +66,7 @@ def main(FLAGS):
         start_time = time.time()
 
         # forward 
-        outputs = model(data)
+        outputs = model(data, cfg['TrainReader']['inputs_def']['fields'])
 
         # backward
         loss = outputs['loss']

@@ -48,7 +48,8 @@ def main(FLAGS):
         start_time = time.time()
 
         # forward 
-        outs = model(data, mode='infer')
+        outs = model(
+            data, cfg['EvalReader']['inputs_def']['fields'], mode='infer')
 
         # call eval
         outs_res.append(outs)

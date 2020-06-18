@@ -147,12 +147,9 @@ class Proposal(object):
         if stage == 0:
             proposal_out = self.generate_proposal(inputs)
             inputs.update(proposal_out)
-            outs.update(proposal_out)
-
         if inputs['mode'] == 'train':
             proposal_target_out = self.generate_proposal_target(inputs, stage)
             outs.update(proposal_target_out)
-
         return outs
 
     def generate_proposal(self, inputs):

@@ -66,11 +66,11 @@ Proposal:
     return_rois_num: True
   proposal_target_generator:
     batch_size_per_im: 512
-    bbox_reg_weights: [[0.1, 0.1, 0.2, 0.2]]
-    bg_thresh_hi: 0.5
-    bg_thresh_lo: 0.0
+    bbox_reg_weights: [[0.1, 0.1, 0.2, 0.2],]
+    bg_thresh_hi: [0.5,]
+    bg_thresh_lo: [0.0,]
+    fg_thresh: [0.5,]
     fg_fraction: 0.25
-    fg_thresh: 0.5
   bbox_post_process: # used in infer
     decode_clip_nms:
       keep_top_k: 100

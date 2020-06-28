@@ -13,7 +13,7 @@ num_classes: 81
 # Model Achitecture
 FasterRCNN:
   # model anchor info flow
-  anchor: Anchor
+  anchor: AnchorRPN
   proposal: Proposal
   # model feat info flow
   backbone: ResNet
@@ -42,7 +42,7 @@ BBoxHead:
       spatial_scale: 0.0625
       extractor_type: 'RoIPool'
 
-Anchor:
+AnchorRPN:
   anchor_generator:
     anchor_sizes: [32, 64, 128, 256, 512]
     aspect_ratios: [0.5, 1.0, 2.0]
@@ -72,6 +72,7 @@ Proposal:
     fg_thresh: [0.5,]
     fg_fraction: 0.25
   bbox_post_process: # used in infer
+    # decode -> clip -> nms
     decode_clip_nms:
       keep_top_k: 100
       score_threshold: 0.05

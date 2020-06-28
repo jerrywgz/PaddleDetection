@@ -5,9 +5,10 @@ from paddle.fluid.dygraph import Layer
 from paddle.fluid.dygraph.base import to_variable
 
 from ppdet.core.workspace import register
-from ppdet.modeling.ops import (AnchorGenerator, RPNAnchorTargetGenerator,
-                                ProposalGenerator, ProposalTargetGenerator,
-                                MaskTargetGenerator, DecodeClipNms)
+from ppdet.modeling.ops import (
+    AnchorGeneratorYOLO, AnchorTargetGeneratorYOLO, AnchorGeneratorRPN,
+    AnchorTargetGeneratorRPN, ProposalGenerator, ProposalTargetGenerator,
+    MaskTargetGenerator, DecodeClipNms, YOLOBox, MultiClassNMS)
 # TODO: modify here into ppdet.modeling.ops like DecodeClipNms 
 from ppdet.py_op.post_process import mask_post_process
 
@@ -40,6 +41,50 @@ class BBoxPostProcess(Layer):
 
 
 @register
+class BBoxPostProcessYOLO(Layer):
+    __shared__ = ['num_classes']
+
+    def __init__(self,
+                 num_classes=81,
+                 decode=None,
+                 clip=None,
+                 yolo_box=YOLOBox().__dict__,
+                 nms=MultiClassNMS().__dict__):
+        super(BBoxPostProcessYOLO, self).__init__()
+        self.num_classes = num_classes
+        self.decode = decode
+        self.clip = clip
+        self.nms = nms
+        if isinstance(yolo_box, dict):
+            self.yolo_box = YOLOBox(**yolo_box)
+        if isinstance(nms, dict):
+            self.nms = MultiClassNMS(**nms)
+
+    def __call__(self, inputs):
+        # TODO: split yolo_box into 2 steps
+        # decode
+        # clip
+        boxes_list = []
+        scores_list = []
+        for i, out in enumerate(inputs['yolo_outs']):
+            boxes, scores = self.yolo_box(out, inputs['im_shape'],
+                                          inputs['mask_anchors'][i], i,
+                                          "yolo_box_" + str(i))
+
+            boxes_list.append(boxes)
+            scores_list.append(fluid.layers.transpose(scores, perm=[0, 2, 1]))
+
+        yolo_boxes = fluid.layers.concat(boxes_list, axis=1)
+        yolo_scores = fluid.layers.concat(scores_list, axis=2)
+
+        pred = self.nms(
+            bboxes=yolo_boxes,
+            scores=yolo_scores, )
+
+        outs = {"predicted_bbox": pred}
+
+
+@register
 class MaskPostProcess(object):
     __shared__ = ['num_classes']
 
@@ -58,20 +103,20 @@ class MaskPostProcess(object):
 
 
 @register
-class Anchor(object):
+class AnchorRPN(object):
     __inject__ = ['anchor_generator', 'anchor_target_generator']
 
     def __init__(self,
                  anchor_type='rpn',
-                 anchor_generator=AnchorGenerator().__dict__,
-                 anchor_target_generator=RPNAnchorTargetGenerator().__dict__):
-        super(Anchor, self).__init__()
+                 anchor_generator=AnchorGeneratorRPN().__dict__,
+                 anchor_target_generator=AnchorTargetGeneratorRPN().__dict__):
+        super(AnchorRPN, self).__init__()
         self.anchor_generator = anchor_generator
         self.anchor_target_generator = anchor_target_generator
         if isinstance(anchor_generator, dict):
-            self.anchor_generator = AnchorGenerator(**anchor_generator)
+            self.anchor_generator = AnchorGeneratorRPN(**anchor_generator)
         if isinstance(anchor_target_generator, dict):
-            self.anchor_target_generator = RPNAnchorTargetGenerator(
+            self.anchor_target_generator = AnchorTargetGeneratorRPN(
                 **anchor_target_generator)
 
     def __call__(self, inputs):
@@ -96,7 +141,6 @@ class Anchor(object):
             x=rpn_rois_delta, shape=(0, -1, 4))
 
         anchor = fluid.layers.reshape(inputs['anchor'], shape=(-1, 4))
-        #var = fluid.layers.reshape(inputs['var'], shape=(-1, 4))
 
         score_pred, roi_pred, score_tgt, roi_tgt, roi_weight = self.anchor_target_generator(
             bbox_pred=rpn_rois_delta,
@@ -114,9 +158,45 @@ class Anchor(object):
         }
         return outs
 
-    def post_process(self, ):
-        # TODO: whether move bbox post process to here 
-        pass
+
+@register
+class AnchorYOLO(object):
+    __inject__ = [
+        'anchor_generator', 'anchor_target_generator', 'anchor_post_process'
+    ]
+
+    def __init__(self,
+                 anchor_generator=AnchorGeneratorYOLO().__dict__,
+                 anchor_target_generator=AnchorTargetGeneratorYOLO().__dict__,
+                 anchor_post_process=BBoxPostProcessYOLO().__dict__):
+        super(AnchorYOLO, self).__init__()
+        self.anchor_generator = anchor_generator
+        self.anchor_target_generator = anchor_target_generator
+        self.anchor_post_process = anchor_post_process
+        if isinstance(anchor_generator, dict):
+            self.anchor_generator = AnchorGeneratorYOLO(**anchor_generator)
+        if isinstance(anchor_target_generator, dict):
+            self.anchor_target_generator = AnchorTargetGeneratorYOLO(
+                **anchor_target_generator)
+        if isinstance(anchor_post_process, dict):
+            self.anchor_post_process = BBoxPostProcessYOLO(
+                **anchor_post_process)
+
+    def __call__(self, inputs):
+        outs = self.generate_anchors(inputs)
+        return outs
+
+    def generate_anchors(self, inputs):
+        outs = self.anchor_generator(inputs['yolo_outs'])
+        outs['anchor_module'] = self
+        return outs
+
+    def generate_anchors_target(self, inputs):
+        outs = self.anchor_target_generator()
+        return outs
+
+    def post_process(self, inputs):
+        return self.anchor_post_process(inputs)
 
 
 @register

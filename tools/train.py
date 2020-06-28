@@ -44,7 +44,7 @@ def main(FLAGS):
 
     # Model
     main_arch = cfg.architecture
-    model = create(cfg.architecture)
+    model = create(cfg.architecture, mode='train')
 
     # Optimizer
     lr = create('LearningRate')()
@@ -54,7 +54,7 @@ def main(FLAGS):
         strategy = fluid.dygraph.parallel.prepare_context()
         model = fluid.dygraph.parallel.DataParallel(model, strategy)
 
-    model = load_dygraph_ckpt(model, pretrain_ckpt=cfg.pretrain_weights)
+    #model = load_dygraph_ckpt(model, pretrain_ckpt=cfg.pretrain_weights)
 
     start_iter = 0
     train_reader = create_reader(

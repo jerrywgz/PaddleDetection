@@ -32,7 +32,8 @@ class MaskRCNN(BaseArch):
                  rpn_head,
                  bbox_head,
                  mask_head,
-                 rpn_only=False):
+                 rpn_only=False,
+                 mode='train'):
         super(MaskRCNN, self).__init__()
 
         self.anchor = anchor
@@ -42,8 +43,9 @@ class MaskRCNN(BaseArch):
         self.rpn_head = rpn_head
         self.bbox_head = bbox_head
         self.mask_head = mask_head
+        self.mode = mode
 
-    def forward(self, inputs, inputs_keys, mode='train'):
+    def forward(self, inputs, inputs_keys):
         self.gbd = self.build_inputs(inputs, inputs_keys)
         self.gbd['mode'] = mode
 

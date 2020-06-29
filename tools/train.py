@@ -65,7 +65,8 @@ def main(FLAGS):
     for iter_id, data in enumerate(train_reader()):
         start_time = time.time()
 
-        # forward 
+        # forward
+        model.train()
         outputs = model(data, cfg['TrainReader']['inputs_def']['fields'])
 
         # backward

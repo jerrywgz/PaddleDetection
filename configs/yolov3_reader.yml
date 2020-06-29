@@ -63,7 +63,7 @@ EvalReader:
     !COCODataSet
       image_dir: val2017
       anno_path: annotations/instances_val2017.json
-      dataset_dir: dataset/coco
+      dataset_dir: /home/ai/dataset/COCO17
       with_background: false
   sample_transforms:
     - !DecodeImage

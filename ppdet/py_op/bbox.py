@@ -165,68 +165,6 @@ def nms(dets, thresh):
     return np.where(suppressed == 0)[0]
 
 
-def nms_with_decode(bboxes,
-                    bbox_probs,
-                    bbox_deltas,
-                    im_info,
-                    keep_top_k=100,
-                    score_thresh=0.05,
-                    nms_thresh=0.5,
-                    class_nums=81,
-                    bbox_reg_weights=[0.1, 0.1, 0.2, 0.2]):
-    bboxes_num = [0, bboxes.shape[0]]
-    bboxes_v = np.array(bboxes)
-    bbox_probs_v = np.array(bbox_probs)
-    bbox_deltas_v = np.array(bbox_deltas)
-    variance_v = np.array(bbox_reg_weights)
-    im_results = [[] for _ in range(len(bboxes_num) - 1)]
-    new_bboxes_num = [0]
-    for i in range(len(bboxes_num) - 1):
-        start = bboxes_num[i]
-        end = bboxes_num[i + 1]
-        if start == end:
-            continue
-
-        bbox_deltas_n = bbox_deltas_v[start:end, :]  # box delta 
-        rois_n = bboxes_v[start:end, :]  # box 
-        rois_n = rois_n / im_info[i][2]  # scale 
-        rois_n = delta2bbox(bbox_deltas_n, rois_n, variance_v)
-        rois_n = clip_bbox(rois_n, im_info[i][:2] / im_info[i][2])
-        cls_boxes = [[] for _ in range(class_nums)]
-        scores_n = bbox_probs_v[start:end, :]
-        for j in range(1, class_nums):
-            inds = np.where(scores_n[:, j] > score_thresh)[0]
-            scores_j = scores_n[inds, j]
-            rois_j = rois_n[inds, j * 4:(j + 1) * 4]
-            dets_j = np.hstack((scores_j[:, np.newaxis], rois_j)).astype(
-                np.float32, copy=False)
-            keep = nms(dets_j, nms_thresh)
-            nms_dets = dets_j[keep, :]
-            #add labels
-            label = np.array([j for _ in range(len(keep))])
-            nms_dets = np.hstack((label[:, np.newaxis], nms_dets)).astype(
-                np.float32, copy=False)
-            cls_boxes[j] = nms_dets
-
-        # Limit to max_per_image detections **over all classes**
-        image_scores = np.hstack(
-            [cls_boxes[j][:, 1] for j in range(1, class_nums)])
-        if len(image_scores) > keep_top_k:
-            image_thresh = np.sort(image_scores)[-keep_top_k]
-            for j in range(1, class_nums):
-                keep = np.where(cls_boxes[j][:, 1] >= image_thresh)[0]
-                cls_boxes[j] = cls_boxes[j][keep, :]
-        im_results_n = np.vstack([cls_boxes[j] for j in range(1, class_nums)])
-        im_results[i] = im_results_n
-        new_bboxes_num.append(len(im_results_n) + new_bboxes_num[-1])
-        labels = im_results_n[:, 0]
-        scores = im_results_n[:, 1]
-        boxes = im_results_n[:, 2:]
-    im_results = np.vstack([im_results[k] for k in range(len(bboxes_num) - 1)])
-    new_bboxes_num = np.array(new_bboxes_num)
-    return new_bboxes_num, im_results
-
-
 @jit
 def compute_bbox_targets(bboxes1, bboxes2, labels, bbox_reg_weights):
     assert bboxes1.shape[0] == bboxes2.shape[0]

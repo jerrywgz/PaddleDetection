@@ -366,7 +366,7 @@ class YOLOBox(object):
 
     def __init__(
             self,
-            num_classes=81,
+            num_classes=80,
             conf_thresh=0.005,
             downsample_ratio=32,
             clip_bbox=True, ):
@@ -379,7 +379,7 @@ class YOLOBox(object):
 
         outs = fluid.layers.yolo_box(x, img_size, anchors, self.num_classes,
                                      self.conf_thresh, self.downsample_ratio //
-                                     2**i, self.clip_bbox, name)
+                                     2**stage, self.clip_bbox, name)
         return outs
 
 

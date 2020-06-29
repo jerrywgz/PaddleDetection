@@ -1,12 +1,14 @@
 import paddle.fluid as fluid
+from paddle.fluid.dygraph import Layer
 from paddle.fluid.param_attr import ParamAttr
 from paddle.fluid.regularizer import L2Decay
 from paddle.fluid.dygraph.nn import Conv2D, BatchNorm
-
 from ppdet.core.workspace import register, serializable
 
+__all__ = ['DarkNet', 'ConvBNLayer']
 
-class ConvBNLayer(fluid.dygraph.Layer):
+
+class ConvBNLayer(Layer):
     def __init__(self,
                  ch_in,
                  ch_out,
@@ -14,8 +16,7 @@ class ConvBNLayer(fluid.dygraph.Layer):
                  stride=1,
                  groups=1,
                  padding=0,
-                 act="leaky",
-                 is_test=True):
+                 act="leaky"):
         super(ConvBNLayer, self).__init__()
 
         self.conv = Conv2D(
@@ -31,7 +32,6 @@ class ConvBNLayer(fluid.dygraph.Layer):
             act=None)
         self.batch_norm = BatchNorm(
             num_channels=ch_out,
-            is_test=is_test,
             param_attr=ParamAttr(
                 initializer=fluid.initializer.Normal(0., 0.02),
                 regularizer=L2Decay(0.)),
@@ -49,14 +49,8 @@ class ConvBNLayer(fluid.dygraph.Layer):
         return out
 
 
-class DownSample(fluid.dygraph.Layer):
-    def __init__(self,
-                 ch_in,
-                 ch_out,
-                 filter_size=3,
-                 stride=2,
-                 padding=1,
-                 is_test=True):
+class DownSample(Layer):
+    def __init__(self, ch_in, ch_out, filter_size=3, stride=2, padding=1):
 
         super(DownSample, self).__init__()
 
@@ -65,8 +59,7 @@ class DownSample(fluid.dygraph.Layer):
             ch_out=ch_out,
             filter_size=filter_size,
             stride=stride,
-            padding=padding,
-            is_test=is_test)
+            padding=padding)
         self.ch_out = ch_out
 
     def forward(self, inputs):
@@ -74,24 +67,14 @@ class DownSample(fluid.dygraph.Layer):
         return out
 
 
-class BasicBlock(fluid.dygraph.Layer):
-    def __init__(self, ch_in, ch_out, is_test=True):
+class BasicBlock(Layer):
+    def __init__(self, ch_in, ch_out):
         super(BasicBlock, self).__init__()
 
         self.conv1 = ConvBNLayer(
-            ch_in=ch_in,
-            ch_out=ch_out,
-            filter_size=1,
-            stride=1,
-            padding=0,
-            is_test=is_test)
+            ch_in=ch_in, ch_out=ch_out, filter_size=1, stride=1, padding=0)
         self.conv2 = ConvBNLayer(
-            ch_in=ch_out,
-            ch_out=ch_out * 2,
-            filter_size=3,
-            stride=1,
-            padding=1,
-            is_test=is_test)
+            ch_in=ch_out, ch_out=ch_out * 2, filter_size=3, stride=1, padding=1)
 
     def forward(self, inputs):
         conv1 = self.conv1(inputs)
@@ -100,17 +83,15 @@ class BasicBlock(fluid.dygraph.Layer):
         return out
 
 
-class LayerWarp(fluid.dygraph.Layer):
-    def __init__(self, ch_in, ch_out, count, is_test=True):
-        super(LayerWarp, self).__init__()
+class Blocks(Layer):
+    def __init__(self, ch_in, ch_out, count):
+        super(Blocks, self).__init__()
 
-        self.basicblock0 = BasicBlock(ch_in, ch_out, is_test=is_test)
+        self.basicblock0 = BasicBlock(ch_in, ch_out)
         self.res_out_list = []
         for i in range(1, count):
-            res_out = self.add_sublayer(
-                "basic_block_%d" % (i),
-                BasicBlock(
-                    ch_out * 2, ch_out, is_test=is_test))
+            res_out = self.add_sublayer("basic_block_%d" % (i),
+                                        BasicBlock(ch_out * 2, ch_out))
             self.res_out_list.append(res_out)
         self.ch_out = ch_out
 
@@ -126,45 +107,32 @@ DarkNet_cfg = {53: ([1, 2, 8, 8, 4])}
 
 @register
 @serializable
-class DarkNet(fluid.dygraph.Layer):
-    def __init__(self,
-                 norm_type='bn',
-                 norm_decay=0.,
-                 depth=53,
-                 mode='eval',
-                 is_test=True):
+class DarkNet(Layer):
+    def __init__(self, depth=53, mode='train'):
         super(DarkNet, self).__init__()
         self.depth = depth
         self.mode = mode
-        print("debug darkenet mode: ", self.mode)
         self.stages = DarkNet_cfg[self.depth][0:5]
 
         self.conv0 = ConvBNLayer(
-            ch_in=3,
-            ch_out=32,
-            filter_size=3,
-            stride=1,
-            padding=1,
-            is_test=is_test)
+            ch_in=3, ch_out=32, filter_size=3, stride=1, padding=1)
 
-        self.downsample0 = DownSample(ch_in=32, ch_out=32 * 2, is_test=is_test)
+        self.downsample0 = DownSample(ch_in=32, ch_out=32 * 2)
 
         self.darknet53_conv_block_list = []
         self.downsample_list = []
         ch_in = [64, 128, 256, 512, 1024]
         for i, stage in enumerate(self.stages):
-            conv_block = self.add_sublayer(
-                "stage_%d" % (i),
-                LayerWarp(
-                    int(ch_in[i]), 32 * (2**i), stage, is_test=is_test))
+            conv_block = self.add_sublayer("stage_%d" % (i),
+                                           Blocks(
+                                               int(ch_in[i]), 32 * (2**i),
+                                               stage))
             self.darknet53_conv_block_list.append(conv_block)
         for i in range(len(self.stages) - 1):
             downsample = self.add_sublayer(
                 "stage_%d_downsample" % i,
                 DownSample(
-                    ch_in=32 * (2**(i + 1)),
-                    ch_out=32 * (2**(i + 2)),
-                    is_test=is_test))
+                    ch_in=32 * (2**(i + 1)), ch_out=32 * (2**(i + 2))))
             self.downsample_list.append(downsample)
 
     def forward(self, inputs):

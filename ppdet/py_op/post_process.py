@@ -137,11 +137,12 @@ def get_det_res(bbox_nums,
                     .format(len(bbox_nums), batch_size)
     k = 0
     for i in range(batch_size):
-        dt_num_this_img = bbox_nums[i + 1] - bbox_nums[i]
         image_id = int(image_id[i][0])
-        image_width = int(image_shape[i][1])  #int(data[i][-1][1])
-        image_height = int(image_shape[i][2])  #int(data[i][-1][2])
-        for j in range(dt_num_this_img):
+        image_width = int(image_shape[i][1])
+        image_height = int(image_shape[i][2])
+
+        det_nums = bbox_nums[i + 1] - bbox_nums[i]
+        for j in range(det_nums):
             dt = bbox_v[k]
             k = k + 1
             num_id, score, xmin, ymin, xmax, ymax = dt.tolist()

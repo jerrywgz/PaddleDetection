@@ -114,8 +114,8 @@ class MaskRCNN(BaseArch):
 
     def infer(self, inputs):
         outs = {
-            'bbox_nums': inputs['predicted_bbox_nums'].numpy(),
             'bbox': inputs['predicted_bbox'].numpy(),
+            'bbox_nums': inputs['predicted_bbox_nums'].numpy(),
             'mask': inputs['predicted_mask'].numpy(),
             'im_id': inputs['im_id'].numpy(),
             'im_shape': inputs['im_shape'].numpy()

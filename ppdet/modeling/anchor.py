@@ -1,8 +1,5 @@
 import numpy as np
-
 import paddle.fluid as fluid
-from paddle.fluid.dygraph import Layer
-from paddle.fluid.dygraph.base import to_variable
 
 from ppdet.core.workspace import register
 from ppdet.modeling.ops import (
@@ -14,7 +11,7 @@ from ppdet.py_op.post_process import mask_post_process
 
 
 @register
-class BBoxPostProcess(Layer):
+class BBoxPostProcess(object):
     def __init__(self,
                  decode=None,
                  clip=None,
@@ -41,11 +38,11 @@ class BBoxPostProcess(Layer):
 
 
 @register
-class BBoxPostProcessYOLO(Layer):
+class BBoxPostProcessYOLO(object):
     __shared__ = ['num_classes']
 
     def __init__(self,
-                 num_classes=81,
+                 num_classes=80,
                  decode=None,
                  clip=None,
                  yolo_box=YOLOBox().__dict__,
@@ -67,21 +64,20 @@ class BBoxPostProcessYOLO(Layer):
         boxes_list = []
         scores_list = []
         for i, out in enumerate(inputs['yolo_outs']):
-            boxes, scores = self.yolo_box(out, inputs['im_shape'],
+            boxes, scores = self.yolo_box(out, inputs['im_size'],
                                           inputs['mask_anchors'][i], i,
                                           "yolo_box_" + str(i))
 
             boxes_list.append(boxes)
             scores_list.append(fluid.layers.transpose(scores, perm=[0, 2, 1]))
-
         yolo_boxes = fluid.layers.concat(boxes_list, axis=1)
         yolo_scores = fluid.layers.concat(scores_list, axis=2)
-
-        pred = self.nms(
-            bboxes=yolo_boxes,
-            scores=yolo_scores, )
-
-        outs = {"predicted_bbox": pred}
+        nmsed_bbox = self.nms(bboxes=yolo_boxes, scores=yolo_scores)
+        # TODO: parse the lod of nmsed_bbox
+        # default batch size is 1
+        bbox_nums = np.array([0, int(nmsed_bbox.shape[0])], dtype=np.int32)
+        outs = {"predicted_bbox_nums": bbox_nums, "predicted_bbox": nmsed_bbox}
+        return outs
 
 
 @register
@@ -130,7 +126,6 @@ class AnchorRPN(object):
         return outs
 
     def generate_anchors_target(self, inputs):
-        # TODO: add yolo anchor targets 
         rpn_rois_score = fluid.layers.transpose(
             inputs['rpn_rois_score'], perm=[0, 2, 3, 1])
         rpn_rois_delta = fluid.layers.transpose(

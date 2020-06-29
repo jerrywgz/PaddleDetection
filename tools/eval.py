@@ -33,11 +33,12 @@ def main(FLAGS):
 
     # Model
     main_arch = cfg.architecture
-    model = create(cfg.architecture)
+    model = create(cfg.architecture, mode='infer')
 
     # Load weights 
-    param_state_dict, opti_state_dict = fluid.load_dygraph(cfg.weights)
-    model.set_dict(param_state_dict)
+    if os.path.isfile(cfg.weights):
+        param_state_dict, opti_state_dict = fluid.load_dygraph(cfg.weights)
+        model.set_dict(param_state_dict)
 
     # Reader 
     eval_reader = create_reader(cfg.EvalReader, devices_num=1)
@@ -48,8 +49,8 @@ def main(FLAGS):
         start_time = time.time()
 
         # forward 
-        outs = model(
-            data, cfg['EvalReader']['inputs_def']['fields'], mode='infer')
+        model.eval()
+        outs = model(data, cfg['EvalReader']['inputs_def']['fields'])
 
         # call eval
         outs_res.append(outs)

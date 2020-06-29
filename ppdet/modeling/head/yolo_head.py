@@ -4,61 +4,54 @@ from paddle.fluid.param_attr import ParamAttr
 from paddle.fluid.initializer import Normal
 from paddle.fluid.regularizer import L2Decay
 from paddle.fluid.dygraph.nn import Conv2D, BatchNorm
-
 from ppdet.core.workspace import register
 from ..backbone.darknet import ConvBNLayer
 
 
-@register
-class YoloDetectionBlock(Layer):
-    def __init__(self, ch_in, channel, is_test=True):
-        super(YoloDetectionBlock, self).__init__()
+class YoloDetBlock(Layer):
+    def __init__(self, ch_in, channel):
+        super(YoloDetBlock, self).__init__()
 
         assert channel % 2 == 0, \
             "channel {} cannot be divided by 2".format(channel)
 
         self.conv0 = ConvBNLayer(
-            ch_in=ch_in,
-            ch_out=channel,
-            filter_size=1,
-            stride=1,
-            padding=0,
-            is_test=is_test)
+            ch_in=ch_in, ch_out=channel, filter_size=1, stride=1, padding=0)
+
         self.conv1 = ConvBNLayer(
             ch_in=channel,
             ch_out=channel * 2,
             filter_size=3,
             stride=1,
-            padding=1,
-            is_test=is_test)
+            padding=1)
+
         self.conv2 = ConvBNLayer(
             ch_in=channel * 2,
             ch_out=channel,
             filter_size=1,
             stride=1,
-            padding=0,
-            is_test=is_test)
+            padding=0)
+
         self.conv3 = ConvBNLayer(
             ch_in=channel,
             ch_out=channel * 2,
             filter_size=3,
             stride=1,
-            padding=1,
-            is_test=is_test)
+            padding=1)
+
         self.route = ConvBNLayer(
             ch_in=channel * 2,
             ch_out=channel,
             filter_size=1,
             stride=1,
-            padding=0,
-            is_test=is_test)
+            padding=0)
+
         self.tip = ConvBNLayer(
             ch_in=channel,
             ch_out=channel * 2,
             filter_size=3,
             stride=1,
-            padding=1,
-            is_test=is_test)
+            padding=1)
 
     def forward(self, inputs):
         out = self.conv0(inputs)
@@ -70,7 +63,6 @@ class YoloDetectionBlock(Layer):
         return route, tip
 
 
-@register
 class Upsample(Layer):
     def __init__(self, scale=2):
         super(Upsample, self).__init__()
@@ -94,49 +86,44 @@ class Upsample(Layer):
 
 @register
 class YOLOFeat(Layer):
-    def __init__(self, feat_in_list=[1024, 768, 384], mode='train'):
+    def __init__(self, feat_in_list=[1024, 768, 384]):
         super(YOLOFeat, self).__init__()
         self.feat_in_list = feat_in_list
-        self.mode = mode
         self.yolo_blocks = []
-        self.route_blocks_2 = []
+        self.route_blocks = []
         for i in range(3):
             yolo_block = self.add_sublayer(
-                "yolo_detecton_block_%d" % (i),
-                YoloDetectionBlock(
-                    feat_in_list[i],
-                    channel=512 // (2**i),
-                    is_test=not self.mode))
+                "yolo_det_block_%d" % (i),
+                YoloDetBlock(
+                    feat_in_list[i], channel=512 // (2**i)))
             self.yolo_blocks.append(yolo_block)
 
             if i < 2:
                 route = self.add_sublayer(
-                    "route2_%d" % i,
+                    "route_%d" % i,
                     ConvBNLayer(
                         ch_in=512 // (2**i),
                         ch_out=256 // (2**i),
                         filter_size=1,
                         stride=1,
-                        padding=0,
-                        is_test=(not self.mode)))
-                self.route_blocks_2.append(route)
-            self.upsample = Upsample()
+                        padding=0))
+                self.route_blocks.append(route)
+        self.upsample = Upsample()
 
     def forward(self, inputs):
         yolo_feats = []
         for i, block in enumerate(inputs['darknet_outs']):
             if i > 0:
                 block = fluid.layers.concat(input=[route, block], axis=1)
+
             route, tip = self.yolo_blocks[i](block)
-
-            if i < 2:
-                route = self.route_blocks_2[i](route)
-                route = self.upsample(route)
-
             yolo_feats.append(tip)
 
-        outs = {'yolo_feat': yolo_feats}
+            if i < 2:
+                route = self.route_blocks[i](route)
+                route = self.upsample(route)
 
+        outs = {'yolo_feat': yolo_feats}
         return outs
 
 
@@ -157,7 +144,7 @@ class YOLOv3Head(Layer):
         self.mode = mode
         self.yolo_feat = yolo_feat
         if isinstance(yolo_feat, dict):
-            self.yolo_feat = YOLOFeat(**yolo_feat, mode=self.mode)
+            self.yolo_feat = YOLOFeat(**yolo_feat)
 
         self.yolo_outs = []
         for i in range(3):

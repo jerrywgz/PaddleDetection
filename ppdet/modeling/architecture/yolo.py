@@ -60,5 +60,9 @@ class YOLOv3(BaseArch):
         return out
 
     def infer(self, inputs):
-        outs = {"bbox": inputs['predicted_bbox'].numpy()}
+        outs = {
+            "bbox": inputs['predicted_bbox'].numpy(),
+            "bbox_nums": inputs['predicted_bbox_nums']
+        }
+        print(outs['bbox_nums'])
         return outs

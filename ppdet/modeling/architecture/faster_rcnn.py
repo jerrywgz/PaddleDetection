@@ -55,12 +55,13 @@ class FasterRCNN(BaseArch):
         self.gbd.update(anchor_out)
 
         # Proposal BBox
+        self.gbd['stage'] = 0
         proposal_out = self.proposal(self.gbd)
-        self.gbd.update(proposal_out)
+        self.gbd.update({'proposal_0': proposal_out})
 
         # BBox Head
-        bbox_head_out = self.bbox_head(self.gbd)
-        self.gbd.update(bbox_head_out)
+        bboxhead_out = self.bbox_head(self.gbd)
+        self.gbd.update({'bboxhead_0': bboxhead_out})
 
         if self.gbd['mode'] == 'infer':
             bbox_out = self.proposal.post_process(self.gbd)

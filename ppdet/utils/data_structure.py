@@ -21,11 +21,17 @@ class BufferDict(dict):
         for k, v in dict(*args, **kwargs).items():
             self[k] = v
 
+    def update_v(self, key, value):
+        if key in self.keys():
+            super(BufferDict, self).__setitem__(key, value)
+        else:
+            raise Exception("The %s is not in global inputs dict" % key)
+
     def get(self, key):
         return self.__getitem__(key)
 
     def set(self, key, value):
-        self.__setitem__(key, value)
+        return self.__setitem__(key, value)
 
     def debug(self, dshape=True, dtype=False, dvalue=False, name='all'):
         if name == 'all':

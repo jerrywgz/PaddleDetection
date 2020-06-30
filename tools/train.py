@@ -154,5 +154,6 @@ if __name__ == '__main__':
     place = fluid.CUDAPlace(fluid.dygraph.parallel.Env().dev_id) \
                     if FLAGS.use_parallel else fluid.CUDAPlace(0) \
                     if FLAGS.use_gpu else fluid.CPUPlace()
+    place = fluid.CUDAPlace(1)
     with fluid.dygraph.guard(place):
         main(FLAGS)

@@ -9,6 +9,7 @@ pretrain_weights: https://paddle-imagenet-models-name.bj.bcebos.com/DarkNet53_pr
 weights: output/yolov3_darknet/model_final
 num_classes: 80
 use_fine_grained_loss: false
+open_debug: False 
 
 YOLOv3:
   anchor: AnchorYOLO

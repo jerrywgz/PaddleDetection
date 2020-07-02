@@ -1,6 +1,5 @@
 import paddle.fluid as fluid
 from paddle.fluid.dygraph import Layer
-
 from paddle.fluid.param_attr import ParamAttr
 from paddle.fluid.initializer import Normal, MSRA
 from paddle.fluid.regularizer import L2Decay
@@ -31,6 +30,7 @@ class BBoxFeat(Layer):
                 postfix = ''
             else:
                 postfix = '_' + str(i)
+            # TODO: set norm type  
             res5 = Blocks(
                 "res5" + postfix,
                 ch_in=feat_in,

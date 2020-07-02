@@ -118,7 +118,7 @@ class DecodeImage(BaseOperator):
         if self.to_rgb:
             im = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
         sample['image'] = im
-
+        #print("Ori Image: ", np.abs(im).mean(), im.shape)
         if 'h' not in sample:
             sample['h'] = im.shape[0]
         elif sample['h'] != im.shape[0]:
@@ -327,7 +327,6 @@ class ResizeImage(BaseOperator):
 
             resize_w = selected_size
             resize_h = selected_size
-
         if self.use_cv2:
             im = cv2.resize(
                 im,
@@ -346,6 +345,7 @@ class ResizeImage(BaseOperator):
             im = im.resize((int(resize_w), int(resize_h)), self.interp)
             im = np.array(im)
         sample['image'] = im
+        #print("Reize Image: ", im_scale_x, im_scale_y, im_shape, np.abs(im).mean())
         return sample
 
 
@@ -565,6 +565,8 @@ class NormalizeImage(BaseOperator):
                         im = im / 255.0
                     im -= mean
                     im /= std
+                    #im -= [102.9801, 115.9465, 122.7717]
+                    #print("Whiten Image: ", np.abs(im).mean(), im.shape)
                     sample[k] = im
         if not batch_input:
             samples = samples[0]

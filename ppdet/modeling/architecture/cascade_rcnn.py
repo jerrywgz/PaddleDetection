@@ -3,9 +3,7 @@ from __future__ import division
 from __future__ import print_function
 
 from paddle import fluid
-
 from ppdet.core.workspace import register
-from ppdet.utils.data_structure import BufferDict
 from .meta_arch import BaseArch
 
 __all__ = ['CascadeRCNN']
@@ -33,11 +31,8 @@ class CascadeRCNN(BaseArch):
                  rpn_head,
                  bbox_head,
                  mask_head,
-                 rpn_only=False,
-                 mode='train',
-                 num_stages=3):
-        super(CascadeRCNN, self).__init__()
-
+                 num_stage=3):
+        super(CascadeRCNN, self).__init__(*args, **kwargs)
         self.anchor = anchor
         self.proposal = proposal
         self.mask = mask
@@ -45,13 +40,9 @@ class CascadeRCNN(BaseArch):
         self.rpn_head = rpn_head
         self.bbox_head = bbox_head
         self.mask_head = mask_head
-        self.mode = mode
         self.num_stages = num_stages
 
     def forward(self, inputs, inputs_keys):
-        self.gbd = self.build_inputs(inputs, inputs_keys)
-        self.gbd['mode'] = self.mode
-
         # Backbone
         bb_out = self.backbone(self.gbd)
         self.gbd.update(bb_out)
@@ -94,19 +85,11 @@ class CascadeRCNN(BaseArch):
             mask_out = self.mask.post_process(self.gbd)
             self.gbd.update(mask_out)
 
-        # result  
-        if self.gbd['mode'] == 'train':
-            return self.loss(self.gbd)
-        elif self.gbd['mode'] == 'infer':
-            self.infer(self.gbd)
-        else:
-            raise "Now, only support train or infer mode!"
-
     def loss(self, inputs):
         outs = {}
         losses = []
 
-        rpn_cls_loss, rpn_reg_loss = self.rpn_head.loss(inputs)
+        rpn_cls_loss, rpn_reg_loss = self.rpn_head.loss(self.gbd)
         outs['loss_rpn_cls'] = rpn_cls_loss,
         outs['loss_rpn_reg'] = rpn_reg_loss,
         losses.extend([rpn_cls_loss, rpn_reg_loss])
@@ -115,7 +98,7 @@ class CascadeRCNN(BaseArch):
         bbox_reg_loss_list = []
         for i in range(self.num_stages):
             inputs.update_v('stage', i)
-            bbox_cls_loss, bbox_reg_loss = self.bbox_head.loss(inputs)
+            bbox_cls_loss, bbox_reg_loss = self.bbox_head.loss(self.gbd)
             bbox_cls_loss_list.append(bbox_cls_loss)
             bbox_reg_loss_list.append(bbox_reg_loss)
             outs['loss_bbox_cls_' + str(i)] = bbox_cls_loss
@@ -123,7 +106,7 @@ class CascadeRCNN(BaseArch):
         losses.extend(bbox_cls_loss_list)
         losses.extend(bbox_reg_loss_list)
 
-        mask_loss = self.mask_head.loss(inputs)
+        mask_loss = self.mask_head.loss(self.gbd)
         outs['mask_loss'] = mask_loss
         losses.append(mask_loss)
 

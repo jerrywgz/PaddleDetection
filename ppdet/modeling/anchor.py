@@ -127,7 +127,7 @@ class AnchorRPN(object):
     def generate_anchors(self, inputs):
         # TODO: update here to use int to specify featmap size
         outs = self.anchor_generator(inputs['rpn_feat'])
-        outs = {'anchor': outs[0], 'var': outs[1], 'anchor_module': self}
+        outs = {'anchor': outs[0], 'anchor_var': outs[1], 'anchor_module': self}
         return outs
 
     def generate_anchors_target(self, inputs):
@@ -148,7 +148,8 @@ class AnchorRPN(object):
             anchor_box=anchor,
             gt_boxes=inputs['gt_bbox'],
             is_crowd=inputs['is_crowd'],
-            im_info=inputs['im_info'])
+            im_info=inputs['im_info'],
+            open_debug=inputs['open_debug'])
         outs = {
             'rpn_score_pred': score_pred,
             'rpn_score_target': score_tgt,
@@ -239,7 +240,7 @@ class Proposal(object):
             scores=rpn_rois_prob,
             bbox_deltas=inputs['rpn_rois_delta'],
             anchors=inputs['anchor'],
-            variances=inputs['var'],
+            variances=inputs['anchor_var'],
             im_info=inputs['im_info'],
             mode=inputs['mode'])
         outs = {
@@ -265,7 +266,8 @@ class Proposal(object):
             is_crowd=inputs['is_crowd'],
             gt_boxes=inputs['gt_bbox'],
             im_info=inputs['im_info'],
-            stage=inputs['stage'])
+            stage=inputs['stage'],
+            open_debug=inputs['open_debug'])
         outs = {
             'rois': outs[0],
             'labels_int32': outs[1],

@@ -9,6 +9,7 @@ pretrain_weights: ../imagenet_resnet50_fusebn_dygraph.npz
 metric: COCO
 weights: output/mask_rcnn_r50_1x/3000
 num_classes: 81
+open_debug: True 
 
 # Model Achitecture
 MaskRCNN:
@@ -23,10 +24,9 @@ MaskRCNN:
   mask_head: MaskHead
 
 ResNet:
-  norm_type: bn
+  norm_type: 'bn'
   depth: 50
-  feature_maps: 4
-  freeze_at: 2
+  freeze_at: 'res2'
 
 RPNHead:
   rpn_feat:

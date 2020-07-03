@@ -9,7 +9,7 @@ pretrain_weights: ../imagenet_resnet50_fusebn_dygraph.npz
 metric: COCO
 weights: output/mask_rcnn_r50_1x/3000
 num_classes: 81
-open_debug: True 
+open_debug: True
 
 # Model Achitecture
 MaskRCNN:
@@ -24,7 +24,7 @@ MaskRCNN:
   mask_head: MaskHead
 
 ResNet:
-  norm_type: 'bn'
+  norm_type: 'affine'
   depth: 50
   freeze_at: 'res2'
 
@@ -42,7 +42,7 @@ BBoxHead:
       resolution: 14
       sampling_ratio: 0
       spatial_scale: 0.0625
-      extractor_type: 'RoIPool'
+      extractor_type: 'RoIAlign'
 
 MaskHead:
   feat_in: 256

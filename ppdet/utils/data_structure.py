@@ -39,31 +39,22 @@ class BufferDict(dict):
                 ditems = self.keys()
             else:
                 ditems = self['debug_names']
-                '''
-                for n in self['debug_names']:
-                    if type(n) is dict:
-                        for k, v in n.items():
-                            new_d
-                    else:
-                        ditems[n] = self.get(n)
-                '''
 
             infos = {}
             for k in ditems:
                 if type(k) is dict:
                     i_d = {}
-                    for i,j in k.items():
+                    for i, j in k.items():
                         if type(j) is list:
                             for jj in j:
-                                i_d[jj] = self.get_debug_info(jj)
-                        infos[i] = i_d 
+                                i_d[jj] = self.get_debug_info(self[i][jj])
+                        infos[i] = i_d
                 else:
-                    infos[k] = self.get_debug_info(k) 
+                    infos[k] = self.get_debug_info(self[k])
             print(infos)
 
-    def get_debug_info(self, k, dshape=True, dvalue=True, dtype=False):
+    def get_debug_info(self, v, dshape=True, dvalue=True, dtype=False):
         info = []
-        v = self.get(k)
         if dshape == True and hasattr(v, 'shape'):
             info.append(v.shape)
         if dvalue == True and hasattr(v, 'numpy'):

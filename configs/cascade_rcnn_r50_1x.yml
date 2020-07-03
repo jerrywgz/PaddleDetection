@@ -25,7 +25,7 @@ CascadeRCNN:
   mask_head: MaskHead
 
 ResNet:
-  norm_type: 'bn'
+  norm_type: 'affine'
   depth: 50
   freeze_at: 'res2'
 
@@ -43,7 +43,7 @@ BBoxHead:
       resolution: 14
       sampling_ratio: 0
       spatial_scale: 0.0625
-      extractor_type: 'RoIPool'
+      extractor_type: 'RoIAlign'
 
 MaskHead:
   feat_in: 256

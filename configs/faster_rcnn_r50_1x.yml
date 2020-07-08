@@ -1,6 +1,6 @@
 architecture: FasterRCNN
 use_gpu: true
-max_iters: 360000
+max_iters: 180000
 log_smooth_window: 50
 save_dir: output
 snapshot_iter: 1000
@@ -9,7 +9,7 @@ pretrain_weights: ../imagenet_resnet50_fusebn_dygraph.npz
 metric: COCO
 weights: output/faster_rcnn_r50_1x/model_final
 num_classes: 81
-open_debug: True
+open_debug: False
 
 # Model Achitecture
 FasterRCNN:
@@ -80,14 +80,14 @@ Proposal:
 
 # Train
 LearningRate:
-  base_lr: 0.005
+  base_lr: 0.01
   schedulers:
+  - !PiecewiseDecay
+    gamma: 0.1
+    milestones: [120000, 160000]
   - !LinearWarmup
     start_factor: 0.3333333333333333
     steps: 500
-  - !PiecewiseDecay
-    gamma: 0.1
-    milestones: [240000, 320000]
 
 OptimizerBuilder:
   optimizer:

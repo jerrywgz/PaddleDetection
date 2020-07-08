@@ -105,7 +105,7 @@ class LearningRate(object):
 
     def __init__(self,
                  base_lr=0.01,
-                 schedulers=[LinearWarmup(), PiecewiseDecay()]):
+                 schedulers=[PiecewiseDecay(), LinearWarmup()]):
         super(LearningRate, self).__init__()
         self.base_lr = base_lr
         self.schedulers = schedulers
@@ -113,9 +113,9 @@ class LearningRate(object):
     def __call__(self):
         # TODO: split warmup & decay 
         # warmup
-        boundary, value = self.schedulers[0](self.base_lr)
+        boundary, value = self.schedulers[1](self.base_lr)
         # decay
-        decay_lr = self.schedulers[1](self.base_lr, boundary, value)
+        decay_lr = self.schedulers[0](self.base_lr, boundary, value)
         return decay_lr
 
 

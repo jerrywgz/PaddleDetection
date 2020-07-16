@@ -2532,3 +2532,103 @@ class DebugVisibleImage(BaseOperator):
         save_path = os.path.join(self.output_dir, out_file_name)
         image.save(save_path, quality=95)
         return sample
+
+
+@register_op
+class MinIOURandomCrop(RandomCrop):
+    """Random crop image and bboxes.
+    Args:
+        aspect_ratio (list): aspect ratio of cropped region.
+            in [min, max] format.
+        thresholds (list): iou thresholds for decide a valid bbox crop.
+        scaling (list): ratio between a cropped region and the original image.
+             in [min, max] format.
+        num_attempts (int): number of tries before giving up.
+        allow_no_crop (bool): allow return without actually cropping them.
+        cover_all_box (bool): ensure all bboxes are covered in the final crop.
+        is_mask_crop(bool): whether crop the segmentation.
+    """
+
+    def __init__(self,
+                 aspect_ratio=None,
+                 thresholds=[.0, .1, .3, .5, .7, .9],
+                 scaling=[.3, 1.],
+                 num_attempts=50,
+                 allow_no_crop=True,
+                 cover_all_box=True,
+                 is_mask_crop=False):
+        super(MinIOURandomCrop, self).__init__(
+            aspect_ratio, thresholds, scaling, num_attempts, allow_no_crop,
+            cover_all_box, is_mask_crop)
+
+    def __call__(self, sample, context=None):
+        if 'gt_bbox' in sample and len(sample['gt_bbox']) == 0:
+            return sample
+
+        h = sample['h']
+        w = sample['w']
+        gt_bbox = sample['gt_bbox']
+        gt_class = sample['gt_class']
+
+        thresholds = list(self.thresholds)
+        if self.allow_no_crop:
+            thresholds.append('no_crop')
+
+        while True:
+            np.random.shuffle(thresholds)
+            thresh = thresholds[0]
+            if thresh == 'no_crop':
+                return sample
+
+            for i in range(self.num_attempts):
+                scale = np.random.uniform(*self.scaling)
+                if self.aspect_ratio is not None:
+                    min_ar, max_ar = self.aspect_ratio
+                    aspect_ratio = np.random.uniform(
+                        max(min_ar, scale**2), min(max_ar, scale**-2))
+                    h_scale = scale / np.sqrt(aspect_ratio)
+                    w_scale = scale * np.sqrt(aspect_ratio)
+                else:
+                    h_scale = np.random.uniform(*self.scaling)
+                    w_scale = np.random.uniform(*self.scaling)
+
+                crop_h = h * h_scale
+                crop_w = w * w_scale
+                if self.aspect_ratio is None:
+                    if crop_h / crop_w < 0.5 or crop_h / crop_w > 2.0:
+                        continue
+
+                crop_h = int(crop_h)
+                crop_w = int(crop_w)
+                crop_y = np.random.randint(0, h - crop_h)
+                crop_x = np.random.randint(0, w - crop_w)
+                crop_box = [crop_x, crop_y, crop_x + crop_w, crop_y + crop_h]
+                iou = self._iou_matrix(
+                    gt_bbox, np.array(
+                        [crop_box], dtype=np.float32))
+                if iou.max() < thresh:
+                    continue
+
+                if self.cover_all_box and iou.min() < thresh:
+                    continue
+
+                center = (gt_bbox[:, :2] + gt_bbox[:, 2:]) / 2
+                mask = (
+                    (center[:, 0] > crop_box[0]) *
+                    (center[:, 1] > crop_box[1]) *
+                    (center[:, 0] < crop_box[2]) * (center[:, 1] < crop_box[3]))
+                if not mask.any():
+                    continue
+                gt_bbox = gt_bbox[mask]
+                gt_class = gt_class[mask]
+
+                sample['image'] = self._crop_image(sample['image'], crop_box)
+                gt_bbox[:, 2:] = gt_bbox[:, 2:].clip(max=crop_box[2:])
+                gt_bbox[:, :2] = gt_bbox[:, :2].clip(min=crop_box[:2])
+                gt_bbox -= np.tile(crop_box[:2], 2)
+
+                sample['gt_bbox'] = gt_bbox
+                sample['gt_class'] = gt_class
+                sample['w'] = crop_box[2] - crop_box[0]
+                sample['h'] = crop_box[3] - crop_box[1]
+                return sample

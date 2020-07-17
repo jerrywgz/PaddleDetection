@@ -24,10 +24,10 @@ from paddle.fluid.param_attr import ParamAttr
 from paddle.fluid.initializer import Normal, Constant, Uniform, Xavier
 from paddle.fluid.regularizer import L2Decay
 from ppdet.core.workspace import register
-from ppdet.modeling.ops import DeformConv, DropBlock
+from ppdet.modeling.ops import DeformConv, DropBlock, ConvNorm
 from ppdet.modeling.losses import GiouLoss
 
-__all__ = ['TTFHead']
+__all__ = ['TTFHead', 'TTFLiteHead']
 
 
 @register
@@ -381,3 +381,158 @@ class TTFHead(object):
 
         ttf_loss = {'hm_loss': hm_loss, 'wh_loss': wh_loss}
         return ttf_loss
+
+
+@register
+class TTFLiteHead(TTFHead):
+    """
+    TTFLiteHead
+    """
+    __inject__ = ['wh_loss']
+    __shared__ = ['num_classes']
+
+    def __init__(self,
+                 head_conv=48,
+                 num_classes=80,
+                 planes=(96, 48, 24),
+                 wh_conv=24,
+                 wh_loss='GiouLoss'):
+        super(TTFLiteHead, self).__init__(
+            head_conv=head_conv,
+            num_classes=num_classes,
+            planes=planes,
+            wh_conv=wh_conv,
+            wh_loss=wh_loss)
+
+    def _lite_conv(self, x, out_c, act=None, name=None):
+        conv1 = ConvNorm(
+            input=x,
+            num_filters=out_c,
+            filter_size=1,
+            norm_type='bn',
+            act=act,
+            initializer=Xavier(),
+            name=name + '.pointwise',
+            norm_name=name + '.pointwise.bn')
+        conv2 = ConvNorm(
+            input=conv1,
+            num_filters=out_c,
+            filter_size=5,
+            norm_type='bn',
+            groups=out_c,
+            act=act,
+            initializer=Xavier(),
+            name=name + '.depthwise',
+            norm_name=name + '.depthwise.bn')
+        conv3 = ConvNorm(
+            input=conv2,
+            num_filters=out_c,
+            filter_size=1,
+            norm_type='bn',
+            act=act,
+            initializer=Xavier(),
+            name=name + '.normal',
+            norm_name=name + '.normal.bn')
+
+        return conv3
+
+    def shortcut(self, x, out_c, layer_num, name=None):
+        assert layer_num > 0
+        for i in range(layer_num):
+            param_name = name + '.layers.' + str(i * 2)
+            act = 'relu6' if i < layer_num - 1 else None
+            x = self._lite_conv(x, out_c, act, param_name)
+        return x
+
+    def _deconv_upsample(self, x, out_c, name=None):
+        conv1 = ConvNorm(
+            input=x,
+            num_filters=out_c,
+            filter_size=1,
+            norm_type='bn',
+            act='relu6',
+            name=name + '.pointwise',
+            initializer=Xavier(),
+            norm_name=name + '.pointwise.bn')
+        conv2 = fluid.layers.conv2d_transpose(
+            input=conv1,
+            num_filters=out_c,
+            filter_size=4,
+            padding=1,
+            stride=2,
+            groups=out_c,
+            param_attr=ParamAttr(
+                name=name + '.deconv.weights', initializer=Xavier()),
+            bias_attr=False)
+        bn = fluid.layers.batch_norm(
+            input=conv2,
+            act='relu6',
+            param_attr=ParamAttr(
+                name=name + '.deconv.bn.scale', regularizer=L2Decay(0.)),
+            bias_attr=ParamAttr(
+                name=name + '.deconv.bn.offset', regularizer=L2Decay(0.)),
+            moving_mean_name=name + '.deconv.bn.mean',
+            moving_variance_name=name + '.deconv.bn.variance')
+        conv3 = ConvNorm(
+            input=bn,
+            num_filters=out_c,
+            filter_size=1,
+            norm_type='bn',
+            act='relu6',
+            name=name + '.normal',
+            initializer=Xavier(),
+            norm_name=name + '.normal.bn')
+        return conv3
+
+    def _interp_upsample(self, x, out_c, name=None):
+        conv = self._lite_conv(x, out_c, 'relu6', name)
+        up = fluid.layers.resize_bilinear(conv, scale=2)
+        return up
+
+    def upsample(self, x, out_c, name=None):
+        deconv_up = self._deconv_upsample(x, out_c, name=name + '.deconv_up')
+        interp_up = self._interp_upsample(x, out_c, name=name + '.interp_up')
+        return deconv_up + interp_up
+
+    def _head(self,
+              x,
+              out_c,
+              conv_num=1,
+              head_out_c=None,
+              name=None,
+              is_test=False):
+        head_out_c = self.head_conv if not head_out_c else head_out_c
+        for i in range(conv_num):
+            conv_name = '{}.{}.conv'.format(name, i)
+            x = self._lite_conv(x, head_out_c, 'relu6', conv_name)
+        bias_init = float(-np.log((1 - 0.01) / 0.01)) if '.hm' in name else 0.
+        conv_b_init = Constant(bias_init)
+        x = fluid.layers.conv2d(
+            x,
+            out_c,
+            1,
+            param_attr=ParamAttr(name='{}.{}.weight'.format(name, conv_num)),
+            bias_attr=ParamAttr(
+                learning_rate=2.,
+                regularizer=L2Decay(0.),
+                name='{}.{}.bias'.format(name, conv_num),
+                initializer=conv_b_init))
+        return x
+
+    def get_output(self, input, name=None, is_test=False):
+        feat = input[-1]
+        for i, out_c in enumerate(self.planes):
+            feat = self.upsample(
+                feat, out_c, name=name + '.deconv_layers.' + str(i))
+            if i < self.shortcut_len:
+                shortcut = self.shortcut(
+                    input[-i - 2],
+                    out_c,
+                    self.shortcut_num[i],
+                    name=name + '.shortcut_layers.' + str(i))
+                feat = fluid.layers.concat([feat, shortcut], axis=1)
+
+        hm = self.hm_head(feat, name=name + '.hm')
+        wh = self.wh_head(feat, name=name + '.wh') * self.wh_offset_base
+
+        return hm, wh

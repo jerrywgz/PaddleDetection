@@ -1,0 +1,139 @@
+architecture: TTFNet
+use_gpu: true
+max_iters: 30000
+log_smooth_window: 20
+save_dir: output
+snapshot_iter: 1000
+metric: COCO
+pretrain_weights: https://paddle-imagenet-models-name.bj.bcebos.com/MobileNetV3_small_x0_35_pretrained.tar
+weights: output/ttfnet_mobilenetv3/model_final
+num_classes: 80
+
+TTFNet:
+  backbone: MobileNetV3RCNN
+  ttf_head: TTFLiteHead
+
+MobileNetV3RCNN:
+  norm_type: sync_bn
+  norm_decay: 0.0
+  model_name: small
+  scale: 0.35
+  conv_decay: 0.00001
+  lr_mult_list: [0.25, 0.25, 0.5, 0.5, 0.75]
+
+TTFLiteHead:
+  head_conv: 48
+
+GiouLoss:
+  loss_weight: 5.
+  do_average: false
+  use_class_weight: false
+
+LearningRate:
+  base_lr: 0.0075 #0.015
+  schedulers:
+  - !PiecewiseDecay
+    gamma: 0.1
+    milestones:
+    - 22500 #112500
+    - 27500 #137500
+  - !LinearWarmup
+    start_factor: 0.2
+    steps: 1000
+
+OptimizerBuilder:
+  #clip_grad_by_norm: 35
+  optimizer:
+    momentum: 0.9
+    type: Momentum
+  regularizer:
+    factor: 0.0004
+    type: L2
+
+TrainReader:
+  inputs_def:
+    fields: ['image', 'ttf_heatmap', 'ttf_box_target', 'ttf_reg_weight']
+  dataset:
+    !COCODataSet
+    image_dir: train2017
+    anno_path: annotations/instances_train2017.json
+    dataset_dir: /paddle/wangguanzhong/dataset/coco
+    with_background: false
+  sample_transforms:
+  - !DecodeImage
+    to_rgb: true
+  - !Resize
+    target_dim: 512
+  - !RandomFlipImage
+    prob: 0.5
+  - !NormalizeImage
+    is_channel_first: false
+    is_scale: false
+    mean: [123.675, 116.28, 103.53]
+    std: [58.395, 57.12, 57.375]
+  - !Permute
+    to_bgr: false
+    channel_first: true
+  batch_transforms:
+  - !Gt2TTFTarget
+    num_classes: 80
+    down_ratio: 4
+  - !PadBatch
+    pad_to_stride: 32
+  batch_size: 12
+  shuffle: true
+  worker_num: 8
+  bufsize: 2
+  use_process: true
+
+EvalReader:
+  inputs_def:
+    image_shape: [3, 512, 512]
+    fields: ['image', 'im_id', 'scale_factor']
+  dataset:
+    !COCODataSet
+      image_dir: val2017
+      anno_path: annotations/instances_val2017.json
+      dataset_dir: /paddle/wangguanzhong/dataset/coco
+      with_background: false
+  sample_transforms:
+    - !DecodeImage
+      to_rgb: True
+    - !Resize
+      target_dim: 512
+    - !NormalizeImage
+      mean: [123.675, 116.28, 103.53]
+      std: [58.395, 57.12, 57.375]
+      is_scale: false
+      is_channel_first: false
+    - !Permute
+      to_bgr: false
+      channel_first: True
+  batch_size: 1
+  drop_empty: false
+  worker_num: 8
+  bufsize: 16
+
+TestReader:
+  inputs_def:
+    image_shape: [3, 512, 512]
+    fields: ['image', 'im_id', 'scale_factor']
+  dataset:
+    !ImageFolder
+      anno_path: annotations/instances_val2017.json
+      with_background: false
+  sample_transforms:
+    - !DecodeImage
+      to_rgb: True
+    - !Resize
+      interp: 1
+      target_dim: 512
+    - !NormalizeImage
+      mean: [123.675, 116.28, 103.53]
+      std: [58.395, 57.12, 57.375]
+      is_scale: false
+      is_channel_first: false
+    - !Permute
+      to_bgr: false
+      channel_first: True
+  batch_size: 1

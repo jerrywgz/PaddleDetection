@@ -14,6 +14,7 @@ from ppdet.data.reader import create_reader
 from ppdet.utils.check import check_gpu, check_version, check_config
 from ppdet.utils.cli import ArgsParser
 from ppdet.utils.checkpoint import load_dygraph_ckpt, save_dygraph_ckpt
+from ppdet.utils.data_utils import get_feed_dict
 
 
 def parse_args():
@@ -99,22 +100,14 @@ def run(FLAGS, cfg):
 
     # Model
     main_arch = cfg.architecture
-    model = create(
-        cfg.architecture,
-        mode='train',
-        open_debug=cfg.open_debug,
-        debug_names=[
-            'im_id', 'image', 'im_info', 'gt_bbox', 
-            'res2', 'res3', 'res4', 
-            'rpn_feat', 'rpn_rois_score', 'rpn_rois_delta', 
-            'rpn_rois',
-            {'proposal_0': 'rois'},
-            {'bbox_head_0': ['rois_feat', 'bbox_feat', 'bbox_score', 'bbox_delta']} 
-        ])
+    model = create(cfg.architecture, )
 
     # Init Model  
-    if os.path.isfile(cfg.pretrain_weights):
-        model = load_dygraph_ckpt(model, pretrain_ckpt=cfg.pretrain_weights, open_debug=cfg.open_debug)
+    #if os.path.isfile(cfg.pretrain_weights):
+    #    model = load_dygraph_ckpt(
+    #        model,
+    #        pretrain_ckpt=cfg.pretrain_weights,
+    #        open_debug=cfg.open_debug)
 
     # Parallel Model 
     if FLAGS.use_parallel:
@@ -146,7 +139,8 @@ def run(FLAGS, cfg):
 
         # Model Forward
         model.train()
-        outputs = model(data, cfg['TrainReader']['inputs_def']['fields'])
+        inputs = get_feed_dict(data, cfg['TrainReader']['inputs_def']['fields'])
+        outputs = model.forward_train(inputs)
 
         # Model Backward
         loss = outputs['loss']
@@ -169,8 +163,8 @@ def run(FLAGS, cfg):
             log_info += ", {}: {:.6f}".format(k, v.numpy()[0])
         print(log_info)
 
-        if cfg.open_debug and iter_id >10:
-            break 
+        if cfg.open_debug and iter_id > 10:
+            break
         # Save Stage 
         if iter_id > 0 and iter_id % cfg.snapshot_iter == 0:
             cfg_name = os.path.basename(FLAGS.config).split('.')[0]

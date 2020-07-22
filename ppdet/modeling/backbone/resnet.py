@@ -5,6 +5,7 @@ from paddle.fluid.dygraph import Conv2D, Pool2D, BatchNorm
 from paddle.fluid.param_attr import ParamAttr
 from paddle.fluid.initializer import Constant
 from ppdet.core.workspace import register, serializable
+from numbers import Integral
 
 
 class ConvBNLayer(Layer):
@@ -216,26 +217,38 @@ class Blocks(Layer):
         return res_out
 
 
-ResNet_cfg = {'50': [3, 4, 6, 3], '101': [3, 4, 23, 3], '152': [3, 8, 36, 3]}
+ResNet_cfg = {50: [3, 4, 6, 3], 101: [3, 4, 23, 3], 152: [3, 8, 36, 3]}
 
 
 @register
 @serializable
 class ResNet(Layer):
-    def __init__(self, depth=50, norm_type='bn', freeze_at='res2'):
+    def __init__(self,
+                 depth=50,
+                 norm_type='bn',
+                 freeze_at=0,
+                 return_idx=[0, 1, 2, 3],
+                 num_blocks=4):
         super(ResNet, self).__init__()
         self.depth = depth
         self.norm_type = norm_type
         self.freeze_at = freeze_at
+        if isinstance(return_idx, Integral):
+            return_idx = [return_idx]
+        assert max(return_idx) < num_stages, \
+            'the maximum return index must smaller than num_stages, ' \
+            'but received maximum return index is {} and num_stages ' \
+            'is {}'.format(max(return_idx), num_stages)
+        self.return_idx = return_idx
+        self.num_stages = num_stages
 
-        block_nums = ResNet_cfg[str(self.depth)]
+        block_nums = ResNet_cfg[depth]
         if self.norm_type == 'bn':
             atom_block = ConvBNLayer
         elif self.norm_type == 'affine':
             atom_block = ConvAffineLayer
         else:
-            atom_block = None
-        assert atom_block != None, 'NormType only support BatchNorm and Affine!'
+            raise 'NormType only supports bn and affine!'
 
         self.conv1 = atom_block(
             'conv1', ch_in=3, ch_out=64, filter_size=7, stride=2, padding=3)
@@ -243,48 +256,32 @@ class ResNet(Layer):
         self.pool = Pool2D(
             pool_type='max', pool_size=3, pool_stride=2, pool_padding=1)
 
-        self.stage2 = Blocks(
-            "res2",
-            ch_in=64,
-            ch_out=64,
-            count=block_nums[0],
-            stride=1,
-            norm_type=norm_type)
+        ch_in_list = [64, 256, 512, 1024]
+        ch_out_list = [64, 128, 256, 512]
 
-        self.stage3 = Blocks(
-            "res3",
-            ch_in=256,
-            ch_out=128,
-            count=block_nums[1],
-            stride=2,
-            norm_type=norm_type)
-
-        self.stage4 = Blocks(
-            "res4",
-            ch_in=512,
-            ch_out=256,
-            count=block_nums[2],
-            stride=2,
-            norm_type=norm_type)
+        self.res_layers = []
+        for i in range(num_stages):
+            res_name = "res{}".format(i + 2)
+            res_layer = self.add_sublayer(
+                res_name,
+                Blocks(
+                    res_name,
+                    ch_in_list[i],
+                    ch_out_list[i],
+                    count=blocks[i],
+                    stride=2 if i == 0 else 1))
+            self.res_layers.append(res_layer)
 
     def forward(self, inputs):
         x = inputs['image']
 
         conv1 = self.conv1(x)
-
-        pool1 = self.pool(conv1)
-
-        res2 = self.stage2(pool1)
-
-        res3 = self.stage3(res2)
-
-        res4 = self.stage4(res3)
-
-        outs = {
-            'res2': res2,
-            'res3': res3,
-            'res4': res4,
-            'res_norm_type': self.norm_type
-        }
-        outs[self.freeze_at].stop_gradient = True
+        x = self.pool(conv1)
+        outs = []
+        for idx, stage in enumerate(self.res_layers):
+            x = stage(x)
+            if idx == self.freeze_at:
+                x.stop_gradient = True
+            if idx in self.return_idx:
+                outs.append(x)
         return outs

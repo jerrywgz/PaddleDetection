@@ -227,7 +227,20 @@ def create(cls_or_name, **kwargs):
                 continue
             # also accept dictionaries and serialized objects
             if isinstance(target_key, dict) or hasattr(target_key, '__dict__'):
-                continue
+                if 'name' not in target_key.keys():
+                    continue
+                inject_name = str(target_key['name'])
+                if inject_name not in global_config:
+                    raise ValueError(
+                        "Missing injection name {} and check it's name in cfg file".
+                        format(k))
+                target = global_config[inject_name]
+                for i, v in target_key.items():
+                    if i == 'name':
+                        continue
+                    target[i] = v
+                if isinstance(target, SchemaDict):
+                    kwargs[k] = create(inject_name)
             elif isinstance(target_key, str):
                 if target_key not in global_config:
                     raise ValueError("Missing injection config:", target_key)

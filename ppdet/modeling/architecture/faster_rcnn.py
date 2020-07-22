@@ -13,6 +13,7 @@ __all__ = ['FasterRCNN']
 class FasterRCNN(BaseArch):
     __category__ = 'architecture'
     __inject__ = [
+        'neck',
         'anchor',
         'proposal',
         'backbone',
@@ -31,48 +32,53 @@ class FasterRCNN(BaseArch):
 
     def model_arch(self, ):
         # Backbone
-        bb_out = self.backbone(self.gbd)
-        self.gbd.update(bb_out)
+        body_feats = self.backbone(self.gbd)
+
+        # Neck
+        if self.neck is not None:
+            body_feats = self.neck(body_feats)
 
         # RPN
-        rpn_head_out = self.rpn_head(self.gbd)
-        self.gbd.update(rpn_head_out)
+        # rpn_head returns two list: rpn_feat, rpn_head_out 
+        # each element in rpn_feats contains 
+        # each element in rpn_head_out contains (rpn_rois_score, rpn_rois_delta)
+        rpn_feats, self.rpn_head_out = self.rpn_head(bb_out)
 
         # Anchor
-        anchor_out = self.anchor(self.gbd)
-        self.gbd.update(anchor_out)
+        # anchor_out returns a list,
+        # each element contains (anchor, anchor_var)
+        self.anchor_out = self.anchor(rpn_feats)
 
-        # Proposal BBox
-        self.gbd['stage'] = 0
-        proposal_out = self.proposal(self.gbd)
-        self.gbd.update({'proposal_0': proposal_out})
+        # Proposal RoI
+        rois, rois_num = self.proposal(self.gbd, self.rpn_head_out,
+                                       self.anchor_out)
 
         # BBox Head
-        bboxhead_out = self.bbox_head(self.gbd)
-        self.gbd.update({'bbox_head_0': bboxhead_out})
-
-        if self.gbd['mode'] == 'infer':
-            bbox_out = self.proposal.post_process(self.gbd)
-            self.gbd.update(bbox_out)
+        # bboxhead_out returns a list
+        # each element contains (score, delta)
+        self.bboxhead_out = self.bbox_head(body_feats, rois, rois_num)
 
     def loss(self, ):
-        rpn_cls_loss, rpn_reg_loss = self.rpn_head.loss(self.gbd)
-        bbox_cls_loss, bbox_reg_loss = self.bbox_head.loss(self.gbd)
-        losses = [rpn_cls_loss, rpn_reg_loss, bbox_cls_loss, bbox_reg_loss]
-        loss = fluid.layers.sum(losses)
-        out = {
-            'loss': loss,
-            'loss_rpn_cls': rpn_cls_loss,
-            'loss_rpn_reg': rpn_reg_loss,
-            'loss_bbox_cls': bbox_cls_loss,
-            'loss_bbox_reg': bbox_reg_loss,
-        }
-        return out
+        loss = {}
+        rpn_loss_inputs = self.anchor.generate_loss_inputs(
+            self.gbd, self.rpn_head_out, self.anchor_out)
+        rpn_loss = self.rpn_head.loss(rpn_loss_inputs)
+        loss.update(rpn_loss)
+
+        targets = self.proposal.get_targets()
+        bbox_loss = self.bbox_head.loss(self.bboxhead_out, targets)
+        loss.update(bbox_loss)
+        total_loss = fluid.layers.sum(loss.values())
+        loss.update({'loss': total_loss})
+        return loss
 
     def infer(self, ):
+        proposals = self.proposal.get_proposals()
+        bbox_out = self.proposal.post_process(
+            self.gbd, self.bboxhead_out, proposals, self.bbox_head.cls_agnostic)
         outs = {
-            "bbox": self.gbd['predicted_bbox'].numpy(),
-            "bbox_nums": self.gbd['predicted_bbox_nums'].numpy(),
+            "bbox": bbox_out['predicted_bbox'].numpy(),
+            "bbox_nums": bbox_out['predicted_bbox_nums'].numpy(),
             'im_id': self.gbd['im_id'].numpy(),
             'im_shape': self.gbd['im_shape'].numpy()
         }

@@ -14,18 +14,19 @@ def bbox_post_process(bboxes,
                       nms_thresh=0.5,
                       class_nums=81,
                       bbox_reg_weights=[0.1, 0.1, 0.2, 0.2]):
-    bbox_nums = [0, bboxes.shape[0]]
-    bboxes_v = np.array(bboxes)
-    bbox_probs_v = np.array(bbox_probs)
-    bbox_deltas_v = np.array(bbox_deltas)
-    variance_v = np.array(bbox_reg_weights)
-    new_bboxes = [[] for _ in range(len(bbox_nums) - 1)]
-    new_bbox_nums = [0]
-    for i in range(len(bbox_nums) - 1):
-        start = bbox_nums[i]
-        end = bbox_nums[i + 1]
-        if start == end:
-            continue
+    bboxes, bbox_nums = bboxes
+    bboxes_v = bboxes.numpy()
+    bbox_probs_v = bbox_probs.numpy()
+    bbox_deltas_v = bbox_deltas.numpy()
+    variance_v = bbox_reg_weights.numpy()
+    new_bboxes = [[] for _ in range(len(bbox_nums))]
+    cur_num = 0
+    new_bbox_nums = []
+    for i in range(len(bbox_nums)):
+        bbox_num = bbox_nums[i]
+        start = cur_num
+        end = start + bbox_num
+        cur_num = end
 
         bbox_deltas_n = bbox_deltas_v[start:end, :]  # box delta 
         rois_n = bboxes_v[start:end, :]  # box 
@@ -58,37 +59,42 @@ def bbox_post_process(bboxes,
                 cls_boxes[j] = cls_boxes[j][keep, :]
         new_bboxes_n = np.vstack([cls_boxes[j] for j in range(1, class_nums)])
         new_bboxes[i] = new_bboxes_n
-        new_bbox_nums.append(len(new_bboxes_n) + new_bbox_nums[-1])
+        new_bbox_nums.append(len(new_bboxes_n))
         labels = new_bboxes_n[:, 0]
         scores = new_bboxes_n[:, 1]
         boxes = new_bboxes_n[:, 2:]
-    new_bboxes = np.vstack([new_bboxes[k] for k in range(len(bbox_nums) - 1)])
+    new_bboxes = np.vstack([new_bboxes[k] for k in range(len(bbox_nums))])
     new_bbox_nums = np.array(new_bbox_nums)
     return new_bbox_nums, new_bboxes
 
 
 @jit
-def mask_post_process(bbox_nums, bboxes, masks, im_info):
-    bboxes = np.array(bboxes)
-    M = cfg.resolution
+def mask_post_process(bboxes, masks, im_info, resolution, thresh):
+    import pycocotools.mask as mask_util
+    if masks.shape[0] == 0:
+        return masks
+    bbox, bbox_num = bboxes
+    bbox = bbox.numpy()
+    M = resolution
     scale = (M + 2.0) / M
-    masks_v = np.array(masks)
-    boxes = bboxes[:, 2:]
-    labels = bboxes[:, 0]
-    segms_results = [[] for _ in range(len(bbox_nums) - 1)]
+    masks_v = masks.numpy()
+    boxes = bbox[:, 2:]
+    labels = bbox[:, 0]
+    segms_results = [[] for _ in range(len(bbox_num))]
+    curr_num = 0
     sum = 0
-    for i in range(len(bbox_nums) - 1):
-        bboxes_n = bboxes[bbox_nums[i]:bbox_nums[i + 1]]
+    for i in range(len(bbox_num)):
+        bbox_n = bbox[curr_num:bbox_num[i]]
         cls_segms = []
-        masks_n = masks_v[bbox_nums[i]:bbox_nums[i + 1]]
-        boxes_n = boxes[bbox_nums[i]:bbox_nums[i + 1]]
-        labels_n = labels[bbox_nums[i]:bbox_nums[i + 1]]
+        masks_n = masks_v[curr_num:bbox_num[i]]
+        boxes_n = boxes[curr_num:bbox_num[i]]
+        labels_n = labels[curr_num:bbox_num[i]]
         im_h = int(round(im_info[i][0] / im_info[i][2]))
         im_w = int(round(im_info[i][1] / im_info[i][2]))
-        boxes_n = expand_boxes(boxes_n, scale)
+        boxes_n = expand_bbox(boxes_n, scale)
         boxes_n = boxes_n.astype(np.int32)
         padded_mask = np.zeros((M + 2, M + 2), dtype=np.float32)
-        for j in range(len(bboxes_n)):
+        for j in range(len(bbox_n)):
             class_id = int(labels_n[j])
             padded_mask[1:-1, 1:-1] = masks_n[j, class_id, :, :]
 
@@ -114,9 +120,10 @@ def mask_post_process(bbox_nums, bboxes, masks, im_info):
                     im_mask[:, :, np.newaxis], order='F'))[0]
             cls_segms.append(rle)
         segms_results[i] = np.array(cls_segms)[:, np.newaxis]
-    segms_results = np.vstack([segms_results[k] for k in range(len(lod) - 1)])
-    bboxes = np.hstack([segms_results, bboxes])
-    return bboxes[:, :3]
+        curr_num += bbox_num[i]
+    segms_results = np.vstack([segms_results[k] for k in range(len(bbox_num))])
+    result = np.hstack([segms_results, bbox])
+    return result[:, :3]
 
 
 @jit
@@ -127,7 +134,7 @@ def get_det_res(bbox_nums,
                 num_id_to_cat_id_map,
                 batch_size=1):
     det_res = []
-    bbox_v = np.array(bbox)
+    bbox_v = bbox.numpy()
     if bbox_v.shape == (
             1,
             1, ):
@@ -163,7 +170,7 @@ def get_det_res(bbox_nums,
 @jit
 def get_seg_res(mask_nums, mask, image_id, num_id_to_cat_id_map, batch_size=1):
     seg_res = []
-    mask_v = np.array(mask)
+    mask_v = mask.numpy()
     k = 0
     for i in range(batch_size):
         image_id = int(image_id[i][0])

@@ -68,8 +68,8 @@ class CascadeRCNN(BaseArch):
             bbox_head_out = self.bbox_head(self.gbd)
             self.gbd.update({'bbox_head_' + str(i): bbox_head_out})
 
-            refine_bbox_out = self.proposal.refine_bbox(self.gbd)
-            self.gbd['proposal_' + str(i)].update(refine_bbox_out)
+            #refine_bbox_out = self.proposal.refine_bbox(self.gbd)
+            #self.gbd['proposal_' + str(i)].update(refine_bbox_out)
 
         if self.gbd['mode'] == 'infer':
             bbox_out = self.proposal.post_process(self.gbd)

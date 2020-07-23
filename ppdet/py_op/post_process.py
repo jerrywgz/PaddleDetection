@@ -134,11 +134,6 @@ def get_det_res(bbox_nums,
                 num_id_to_cat_id_map,
                 batch_size=1):
     det_res = []
-    bbox_v = bbox.numpy()
-    if bbox_v.shape == (
-            1,
-            1, ):
-        return dts_res
     assert (len(bbox_nums) == batch_size + 1), \
       "Error bbox_nums Tensor offset dimension. bbox_nums({}) vs. batch_size({})"\
                     .format(len(bbox_nums), batch_size)
@@ -150,7 +145,7 @@ def get_det_res(bbox_nums,
 
         det_nums = bbox_nums[i + 1] - bbox_nums[i]
         for j in range(det_nums):
-            dt = bbox_v[k]
+            dt = bbox[k]
             k = k + 1
             num_id, score, xmin, ymin, xmax, ymax = dt.tolist()
             category_id = num_id_to_cat_id_map[num_id]
@@ -170,13 +165,12 @@ def get_det_res(bbox_nums,
 @jit
 def get_seg_res(mask_nums, mask, image_id, num_id_to_cat_id_map, batch_size=1):
     seg_res = []
-    mask_v = mask.numpy()
     k = 0
     for i in range(batch_size):
         image_id = int(image_id[i][0])
         dt_num_this_img = mask_nums[i + 1] - mask_nums[i]
         for j in range(dt_num_this_img):
-            dt = mask_v[k]
+            dt = mask[k]
             k = k + 1
             sg, num_id, score = dt.tolist()
             cat_id = num_id_to_cat_id_map[num_id]

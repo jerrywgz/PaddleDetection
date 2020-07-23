@@ -34,10 +34,7 @@ class RPNFeat(Layer):
 class RPNHead(Layer):
     __inject__ = ['rpn_feat']
 
-    def __init__(self,
-                 anchor_per_position=15,
-                 rpn_channel=1024,
-                 rpn_feat=RPNFeat().__dict__):
+    def __init__(self, rpn_feat, anchor_per_position=15, rpn_channel=1024):
         super(RPNHead, self).__init__()
         self.rpn_feat = rpn_feat
         if isinstance(rpn_feat, dict):

@@ -1,19 +1,12 @@
 import numpy as np
 import paddle.fluid as fluid
 from ppdet.core.workspace import register
-try:
-    from collections.abc import Sequence
-except Exception:
-    from collections import Sequence
-from ppdet.modeling.ops import (AnchorGeneratorYOLO, AnchorTargetGeneratorYOLO,
-                                AnchorGeneratorRPN, AnchorTargetGeneratorRPN,
-                                ProposalGenerator, ProposalTargetGenerator,
-                                DecodeClipNms, YOLOBox, MultiClassNMS)
 
 
 @register
 class BBoxPostProcess(object):
     __shared__ = ['num_classes']
+    __inject__ = ['decode_clip_nms']
 
     def __init__(self,
                  decode_clip_nms,
@@ -72,22 +65,15 @@ class BBoxPostProcess(object):
 @register
 class BBoxPostProcessYOLO(object):
     __shared__ = ['num_classes']
+    __inject__ = ['yolo_box', 'nms']
 
-    def __init__(self,
-                 num_classes=80,
-                 decode=None,
-                 clip=None,
-                 yolo_box=YOLOBox().__dict__,
-                 nms=MultiClassNMS().__dict__):
+    def __init__(self, yolo_box, nms, num_classes=80, decode=None, clip=None):
         super(BBoxPostProcessYOLO, self).__init__()
+        self.yolo_box = yolo_box
+        self.nms = nms
         self.num_classes = num_classes
         self.decode = decode
         self.clip = clip
-        self.nms = nms
-        if isinstance(yolo_box, dict):
-            self.yolo_box = YOLOBox(**yolo_box)
-        if isinstance(nms, dict):
-            self.nms = MultiClassNMS(**nms)
 
     def __call__(self, inputs):
         # TODO: split yolo_box into 2 steps
@@ -182,22 +168,12 @@ class AnchorYOLO(object):
         'anchor_generator', 'anchor_target_generator', 'anchor_post_process'
     ]
 
-    def __init__(self,
-                 anchor_generator=AnchorGeneratorYOLO().__dict__,
-                 anchor_target_generator=AnchorTargetGeneratorYOLO().__dict__,
-                 anchor_post_process=BBoxPostProcessYOLO().__dict__):
+    def __init__(self, anchor_generator, anchor_target_generator,
+                 anchor_post_process):
         super(AnchorYOLO, self).__init__()
         self.anchor_generator = anchor_generator
         self.anchor_target_generator = anchor_target_generator
         self.anchor_post_process = anchor_post_process
-        if isinstance(anchor_generator, dict):
-            self.anchor_generator = AnchorGeneratorYOLO(**anchor_generator)
-        if isinstance(anchor_target_generator, dict):
-            self.anchor_target_generator = AnchorTargetGeneratorYOLO(
-                **anchor_target_generator)
-        if isinstance(anchor_post_process, dict):
-            self.anchor_post_process = BBoxPostProcessYOLO(
-                **anchor_post_process)
 
     def __call__(self, inputs):
         outs = self.generate_anchors(inputs)
@@ -212,11 +188,7 @@ class AnchorYOLO(object):
         outs = self.anchor_target_generator()
         return outs
 
-    def post_process(
-            self,
-            inputs,
-            bboxhead_out,
-            proposals, ):
+    def post_process(self, inputs):
         return self.anchor_post_process(inputs)
 
 
@@ -227,7 +199,7 @@ class Proposal(object):
     ]
 
     def __init__(self, proposal_generator, proposal_target_generator,
-                 post_process):
+                 bbox_post_process):
         super(Proposal, self).__init__()
         self.proposal_generator = proposal_generator
         self.proposal_target_generator = proposal_target_generator
@@ -328,3 +300,7 @@ class Proposal(object):
 
     def get_proposals():
         return self.proposals_list
+
+    def post_process(self, inputs, bbox_head_out, rois):
+        bboxes = self.bbox_post_process(inputs, bbox_head_out, rois)
+        return bboxes

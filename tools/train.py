@@ -14,17 +14,16 @@ from ppdet.data.reader import create_reader
 from ppdet.utils.check import check_gpu, check_version, check_config
 from ppdet.utils.cli import ArgsParser
 from ppdet.utils.checkpoint import load_dygraph_ckpt, save_dygraph_ckpt
-from ppdet.utils.data_utils import get_feed_dict
 
 
 def parse_args():
     parser = ArgsParser()
     parser.add_argument(
-        "-r",
-        "--resume_checkpoint",
-        default=None,
+        "-ckpt_type",
+        default='pretrain',
         type=str,
-        help="Checkpoint path for resuming training.")
+        help="Loading Checkpoints only support 'pretrain', 'finetune', 'resume'."
+    )
     parser.add_argument(
         "--fp16",
         action='store_true',
@@ -89,42 +88,35 @@ def run(FLAGS, cfg):
         np.random.seed(local_seed)
 
     if FLAGS.enable_ce or cfg.open_debug:
-        fluid.default_startup_program().random_seed = 1000
-        fluid.default_main_program().random_seed = 1000
         random.seed(0)
         np.random.seed(0)
 
-    if FLAGS.use_parallel:
-        strategy = fluid.dygraph.parallel.prepare_context()
-        parallel_log = "Note: use parallel "
-
     # Model
     main_arch = cfg.architecture
-    model = create(cfg.architecture, )
-
-    # Init Model  
-    #if os.path.isfile(cfg.pretrain_weights):
-    #    model = load_dygraph_ckpt(
-    #        model,
-    #        pretrain_ckpt=cfg.pretrain_weights,
-    #        open_debug=cfg.open_debug)
-
-    # Parallel Model 
-    if FLAGS.use_parallel:
-        #strategy = fluid.dygraph.parallel.prepare_context()
-        model = fluid.dygraph.parallel.DataParallel(model, strategy)
-        parallel_log += "with data parallel!"
-        print(parallel_log)
+    model = create(cfg.architecture, mode='train', open_debug=cfg.open_debug)
 
     # Optimizer
     lr = create('LearningRate')()
     optimizer = create('OptimizerBuilder')(lr, model.parameters())
 
-    # Data Generator 
+    # Init Model & Optimzer   
+    model = load_dygraph_ckpt(
+        model,
+        optimizer,
+        cfg.pretrain_weights,
+        cfg.weights,
+        FLAGS.ckpt_type,
+        open_debug=cfg.open_debug)
+
+    # Parallel Model 
+    if FLAGS.use_parallel:
+        strategy = fluid.dygraph.parallel.prepare_context()
+        model = fluid.dygraph.parallel.DataParallel(model, strategy)
+
+    # Data Reader 
     start_iter = 0
     if cfg.use_gpu:
-        devices_num = fluid.core.get_cuda_device_count(
-        ) if FLAGS.use_parallel else 1
+        devices_num = fluid.core.get_cuda_device_count()
     else:
         devices_num = int(os.environ.get('CPU_NUM', 1))
 
@@ -139,8 +131,8 @@ def run(FLAGS, cfg):
 
         # Model Forward
         model.train()
-        inputs = get_feed_dict(data, cfg['TrainReader']['inputs_def']['fields'])
-        outputs = model.forward_train(inputs)
+        outputs = model(data, cfg['TrainReader']['inputs_def']['fields'],
+                        'train')
 
         # Model Backward
         loss = outputs['loss']
@@ -163,14 +155,19 @@ def run(FLAGS, cfg):
             log_info += ", {}: {:.6f}".format(k, v.numpy()[0])
         print(log_info)
 
+        # Debug 
         if cfg.open_debug and iter_id > 10:
             break
+
         # Save Stage 
-        if iter_id > 0 and iter_id % cfg.snapshot_iter == 0:
+        if iter_id > 0 and iter_id % int(
+                cfg.snapshot_iter) == 0 and fluid.dygraph.parallel.Env(
+                ).local_rank == 0:
             cfg_name = os.path.basename(FLAGS.config).split('.')[0]
             save_name = str(
                 iter_id) if iter_id != cfg.max_iters - 1 else "model_final"
             save_dir = os.path.join(cfg.save_dir, cfg_name, save_name)
+            save_dygraph_ckpt(model, optimizer, save_dir)
 
 
 def main():
@@ -183,7 +180,6 @@ def main():
     check_version()
 
     place = fluid.CUDAPlace(fluid.dygraph.parallel.Env().dev_id) \
-                    if FLAGS.use_parallel else fluid.CUDAPlace(0) \
                     if cfg.use_gpu else fluid.CPUPlace()
 
     with fluid.dygraph.guard(place):

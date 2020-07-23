@@ -5,7 +5,6 @@ from paddle.fluid.initializer import Normal, MSRA, Xavier
 from paddle.fluid.regularizer import L2Decay
 from paddle.fluid.dygraph.nn import Conv2D, Pool2D, Linear
 from ppdet.core.workspace import register
-from ..ops import RoIExtractor
 
 
 @register

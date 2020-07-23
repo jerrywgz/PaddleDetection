@@ -6,8 +6,6 @@ from paddle.fluid.initializer import Normal, MSRA
 from paddle.fluid.regularizer import L2Decay
 from paddle.fluid.dygraph.nn import Conv2D, Pool2D, Conv2DTranspose
 from ppdet.core.workspace import register
-from ..ops import RoIExtractor
-from ..backbone.resnet import Blocks
 
 
 @register

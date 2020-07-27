@@ -49,16 +49,13 @@ def load_dygraph_ckpt(model,
                       pretrain_ckpt=None,
                       ckpt=None,
                       ckpt_type='pretrain',
-                      exclude_params=[],
-                      open_debug=False):
+                      exclude_params=[]):
 
     if ckpt_type == 'pretrain':
         ckpt = pretrain_ckpt
     ckpt = get_ckpt_path(ckpt)
     if ckpt is not None and os.path.exists(ckpt):
         param_state_dict, optim_state_dict = fluid.load_dygraph(ckpt)
-        if open_debug:
-            print("Loading Weights: ", param_state_dict.keys())
 
         if len(exclude_params) != 0:
             for k in exclude_params:

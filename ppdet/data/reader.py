@@ -320,6 +320,10 @@ class Reader(object):
             raise StopIteration
         batch = self._load_batch()
         self._curr_iter += 1
+        #print('batch: ', batch)
+        #print('batch len: ', len(batch))
+        #print('self._drop_last: {}, self._batch_size: {}'.format(self._drop_last, self._batch_size))
+        #print('self._worker_num: ', self._worker_num)
         if self._drop_last and len(batch) < self._batch_size:
             raise StopIteration
         if self._worker_num > -1:
@@ -393,6 +397,7 @@ class Reader(object):
             batch = self._batch_transforms(batch)
         if len(batch) > 0 and self._fields:
             batch = batch_arrange(batch, self._fields)
+        #print('worker batch: ',batch)
         return batch
 
     def _load_image(self, filename):

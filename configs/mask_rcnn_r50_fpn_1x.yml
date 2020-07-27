@@ -103,7 +103,7 @@ Proposal:
     name: BBoxPostProcess
     # decode -> clip -> nms
     decode_clip_nms:
-      name: DecodePostProcess
+      name: DecodeClipNms
       keep_top_k: 100
       score_threshold: 0.05
       nms_threshold: 0.5

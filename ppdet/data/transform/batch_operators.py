@@ -62,8 +62,8 @@ class PadBatch(BaseOperator):
             samples (list): a batch of sample, each is dict.
         """
         coarsest_stride = self.pad_to_stride
-        if coarsest_stride == 0:
-            return samples
+        #if coarsest_stride == 0:
+        #    return samples
 
         max_shape = np.array([data['image'].shape for data in samples]).max(
             axis=0)
@@ -83,7 +83,7 @@ class PadBatch(BaseOperator):
             data['image'] = padding_im
             if self.use_padded_im_info:
                 data['im_info'][:2] = max_shape[1:3]
-
+        #print('pad data: ', data)
         if self.pad_gt:
             gt_num = []
             if data['gt_poly'] is not None and len(data['gt_poly']) > 0:
@@ -129,6 +129,8 @@ class PadBatch(BaseOperator):
                 data['gt_bbox'] = gt_box_data
                 data['gt_class'] = gt_class_data
                 data['is_crowd_data'] = is_crowd_data
+
+        #print('pad data: ', data)
         return samples
 
 

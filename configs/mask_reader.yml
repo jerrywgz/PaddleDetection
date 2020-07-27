@@ -30,7 +30,7 @@ TrainReader:
     pad_to_stride: 32
     use_padded_im_info: false
     pad_gt: True
-  batch_size: 1
+  batch_size: 2
   shuffle: true
   worker_num: 2
   drop_last: false

@@ -87,26 +87,25 @@ def run(FLAGS, cfg):
         random.seed(local_seed)
         np.random.seed(local_seed)
 
-    if FLAGS.enable_ce or cfg.open_debug:
+    if FLAGS.enable_ce:
         random.seed(0)
         np.random.seed(0)
 
     # Model
     main_arch = cfg.architecture
-    model = create(cfg.architecture, mode='train', open_debug=cfg.open_debug)
+    model = create(cfg.architecture)
 
     # Optimizer
     lr = create('LearningRate')()
     optimizer = create('OptimizerBuilder')(lr, model.parameters())
 
     # Init Model & Optimzer   
-    model = load_dygraph_ckpt(
-        model,
-        optimizer,
-        cfg.pretrain_weights,
-        cfg.weights,
-        FLAGS.ckpt_type,
-        open_debug=cfg.open_debug)
+    #model = load_dygraph_ckpt(
+    #    model,
+    #    optimizer,
+    #    cfg.pretrain_weights,
+    #    cfg.weights,
+    #    FLAGS.ckpt_type)
 
     # Parallel Model 
     if FLAGS.use_parallel:
@@ -127,6 +126,7 @@ def run(FLAGS, cfg):
 
     # Run Train 
     for iter_id, data in enumerate(train_reader()):
+        print('train_reader: ', data)
         start_time = time.time()
 
         # Model Forward
@@ -154,10 +154,6 @@ def run(FLAGS, cfg):
         for k, v in outputs.items():
             log_info += ", {}: {:.6f}".format(k, v.numpy()[0])
         print(log_info)
-
-        # Debug 
-        if cfg.open_debug and iter_id > 10:
-            break
 
         # Save Stage 
         if iter_id > 0 and iter_id % int(

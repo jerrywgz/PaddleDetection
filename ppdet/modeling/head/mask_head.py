@@ -27,22 +27,35 @@ class MaskFeat(Layer):
         self.mask_num_stages = mask_num_stages
         self.share_bbox_feat = share_bbox_feat
         self.upsample_module = []
+        fan_conv = feat_out * 3 * 3
+        fan_deconv = feat_out * 2 * 2
         for i in range(self.mask_num_stages):
             name = 'stage_{}'.format(i)
             mask_conv = Sequential()
             for j in range(self.num_convs):
                 conv_name = 'mask_inter_feat_{}'.format(j)
-                conv = mask_conv.add_sublayer(conv_name, Conv2D())
-            deconv_name = 'conv5_mask'
+                conv = mask_conv.add_sublayer(
+                    conv_name,
+                    Conv2D(
+                        num_channels=feat_in if j == 1 else feat_out,
+                        num_filters=feat_out,
+                        filter_size=3,
+                        act='relu',
+                        padding=1,
+                        param_attr=ParamAttr(initializer=MSRA(
+                            uniform=False, fan_in=fan_conv)),
+                        bias_attr=ParamAttr(
+                            learning_rate=2., regularizer=L2Decay(0.))))
             mask_conv.add_sublayer(
-                deconv_name,
+                'conv5_mask',
                 Conv2DTranspose(
                     num_channels=self.feat_in,
                     num_filters=self.feat_out,
                     filter_size=2,
                     stride=2,
                     act='relu',
-                    param_attr=ParamAttr(initializer=MSRA(uniform=False)),
+                    param_attr=ParamAttr(initializer=MSRA(
+                        uniform=False, fan_in=fan_deconv)),
                     bias_attr=ParamAttr(
                         learning_rate=2., regularizer=L2Decay(0.))))
             upsample = self.add_sublayer(name, mask_conv)
@@ -68,28 +81,32 @@ class MaskFeat(Layer):
 
 @register
 class MaskHead(Layer):
-    __shared__ = ['num_classes', 'num_stages']
+    __shared__ = ['num_classes', 'mask_num_stages']
     __inject__ = ['mask_feat']
 
-    def __init__(self, mask_feat, feat_in=256, num_classes=81, num_stages=1):
+    def __init__(self,
+                 mask_feat,
+                 feat_in=256,
+                 num_classes=81,
+                 mask_num_stages=1):
         super(MaskHead, self).__init__()
         self.mask_feat = mask_feat
         self.feat_in = feat_in
         self.num_classes = num_classes
-        self.num_stages = num_stages
         self.mask_num_stages = mask_num_stages
         self.mask_fcn_logits = []
-        for i in range(self.num_stages):
+        for i in range(self.mask_num_stages):
             name = 'mask_fcn_logits_{}'.format(i)
             self.mask_fcn_logits.append(
-                name,
-                fluid.dygraph.Conv2D(
-                    num_channels=self.feat_in,
-                    num_filters=self.num_classes,
-                    filter_size=1,
-                    param_attr=ParamAttr(initializer=MSRA(uniform=False)),
-                    bias_attr=ParamAttr(
-                        learning_rate=2., regularizer=L2Decay(0.0))))
+                self.add_sublayer(
+                    name,
+                    fluid.dygraph.Conv2D(
+                        num_channels=self.feat_in,
+                        num_filters=self.num_classes,
+                        filter_size=1,
+                        param_attr=ParamAttr(initializer=MSRA(uniform=False)),
+                        bias_attr=ParamAttr(
+                            learning_rate=2., regularizer=L2Decay(0.0)))))
 
     def forward_train(self,
                       body_feats,

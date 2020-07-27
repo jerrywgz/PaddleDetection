@@ -32,6 +32,8 @@ class BaseArch(Layer):
     def build_inputs(self, data, input_def):
         inputs = {}
         for name, input in zip(input_def, data):
+            print('data: ', len(data), data[0][0].shape, data[0][1].shape)
+            print('name: {}, input: {}'.format(name, input))
             v = to_variable(np.array(input))
             inputs[name] = v
         return inputs

@@ -228,7 +228,7 @@ class ResNet(Layer):
                  norm_type='bn',
                  freeze_at=0,
                  return_idx=[0, 1, 2, 3],
-                 num_blocks=4):
+                 num_stages=4):
         super(ResNet, self).__init__()
         self.depth = depth
         self.norm_type = norm_type
@@ -268,7 +268,7 @@ class ResNet(Layer):
                     res_name,
                     ch_in_list[i],
                     ch_out_list[i],
-                    count=blocks[i],
+                    count=block_nums[i],
                     stride=2 if i == 0 else 1))
             self.res_layers.append(res_layer)
 

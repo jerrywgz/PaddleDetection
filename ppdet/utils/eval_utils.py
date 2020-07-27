@@ -28,10 +28,7 @@ def json_eval_results(metric, json_directory=None, dataset=None):
             logger.info("{} not exists!".format(v_json))
 
 
-def coco_eval_results(outs_res=None,
-                      include_mask=False,
-                      batch_size=1,
-                      dataset=None):
+def coco_eval_results(outs_res=None, include_mask=False, dataset=None):
     print("start evaluate bbox using coco api")
     import io
     import six
@@ -49,8 +46,8 @@ def coco_eval_results(outs_res=None,
     if outs_res is not None and len(outs_res) > 0:
         det_res = []
         for outs in outs_res:
-            det_res += get_det_res(outs['bbox_nums'], outs['bbox'],
-                                   outs['im_id'], catid, batch_size)
+            det_res += get_det_res(outs['bbox'], outs['bbox_nums'],
+                                   outs['im_id'], catid)
 
         with io.open("bbox_eval.json", 'w') as outfile:
             encode_func = unicode if six.PY2 else str
@@ -65,8 +62,8 @@ def coco_eval_results(outs_res=None,
     if outs_res is not None and len(outs_res) > 0 and include_mask:
         seg_res = []
         for outs in outs_res:
-            seg_res += get_seg_res(outs['bbox_nums'], outs['mask'],
-                                   outs['im_id'], catid, batch_size)
+            seg_res += get_seg_res(outs['mask'], outs['bbox_nums'],
+                                   outs['im_id'], catid)
 
         with io.open("mask_eval.json", 'w') as outfile:
             encode_func = unicode if six.PY2 else str

@@ -24,7 +24,8 @@ except Exception:
 import logging
 import cv2
 import numpy as np
-
+import operator
+from functools import reduce
 from .operators import register_op, BaseOperator
 from .op_helper import jaccard_overlap, gaussian2D
 
@@ -83,7 +84,6 @@ class PadBatch(BaseOperator):
             data['image'] = padding_im
             if self.use_padded_im_info:
                 data['im_info'][:2] = max_shape[1:3]
-        #print('pad data: ', data)
         if self.pad_gt:
             gt_num = []
             if data['gt_poly'] is not None and len(data['gt_poly']) > 0:
@@ -128,9 +128,8 @@ class PadBatch(BaseOperator):
                     data['gt_poly'] = gt_masks_data
                 data['gt_bbox'] = gt_box_data
                 data['gt_class'] = gt_class_data
-                data['is_crowd_data'] = is_crowd_data
+                data['is_crowd'] = is_crowd_data
 
-        #print('pad data: ', data)
         return samples
 
 

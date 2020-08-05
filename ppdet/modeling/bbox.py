@@ -25,6 +25,8 @@ class BBoxPostProcess(object):
         self.decode_clip_nms = decode_clip_nms
         self.score_stage = score_stage
         self.delta_stage = delta_stage
+        self.out_dim = 2 if cls_agnostic else num_classes
+        self.cls_agnostic = cls_agnostic
 
     def __call__(self, inputs, bboxheads, rois):
         # TODO: split into 3 steps
@@ -34,32 +36,34 @@ class BBoxPostProcess(object):
         # nms
         if isinstance(rois, tuple):
             proposal, proposal_num = rois
-            score, delta = bboxheads
+            score, delta = bboxheads[0]
             bbox_prob = fluid.layers.softmax(score)
+            delta = fluid.layers.reshape(delta, (-1, self.out_dim, 4))
         else:
             num_stage = len(rois)
             proposal_list = []
             prob_list = []
             delta_list = []
-            for stage, (proposal, bboxhead) in zip(rois, bboxheads):
+            for stage, (proposals, bboxhead) in zip(rois, bboxheads):
                 score, delta = bboxhead
+                proposal, proposal_num = proposals
                 if stage in self.score_stage:
-                    bbox_prob = fluid.layers.softmax()
-                    proposal_list.append(proposal)
-                if stage in self.delta_stage:
+                    bbox_prob = fluid.layers.softmax(score)
                     prob_list.append(bbox_prob)
+                if stage in self.delta_stage:
+                    proposal_list.append(proposal)
                     delta_list.append(delta)
             bbox_prob = fluid.layers.mean(prob_list)
             delta = fluid.layers.mean(delta_list)
             proposal = fluid.layers.mean(proposal_list)
-            out_dim = 2 if self.cls_agnostic else self.num_classes
-            delta = fluid.layers.reshape(delta, (-1, out_dim, 4))
+            delta = fluid.layers.reshape(delta, (-1, self.out_dim, 4))
             if self.cls_agnostic:
                 delta = delta[:, 1:2, :]
                 delta = fluid.layers.expand(delta, [1, self.num_classes, 1])
-        bbox_nums, bbox = self.decode_clip_nms(proposal, bbox_prob, delta,
-                                               inputs['im_info'])
-        return bbox, bbox_nums
+        bboxes = (proposal, proposal_num)
+        bboxes, bbox_nums = self.decode_clip_nms(bboxes, bbox_prob, delta,
+                                                 inputs['im_info'])
+        return bboxes, bbox_nums
 
 
 @register
@@ -108,13 +112,14 @@ class AnchorRPN(object):
         self.anchor_target_generator = anchor_target_generator
 
     def __call__(self, rpn_feats):
-        anchors = self.generate_anchors(rpn_feats)
+        anchors = []
+        num_level = len(rpn_feats)
         for i, rpn_feat in enumerate(rpn_feats):
             anchor, var = self.anchor_generator(rpn_feat, i)
             anchors.append((anchor, var))
         return anchors
 
-    def _get_target_input(rpn_feats, anchors):
+    def _get_target_input(self, rpn_feats, anchors):
         rpn_score_list = []
         rpn_delta_list = []
         anchor_list = []
@@ -136,7 +141,7 @@ class AnchorRPN(object):
         anchors = fluid.layers.concat(anchor_list)
         return rpn_scores, rpn_deltas, anchors
 
-    def generate_loss_input(self, inputs, rpn_head_out, anchors):
+    def generate_loss_inputs(self, inputs, rpn_head_out, anchors):
         assert len(rpn_head_out) == len(
             anchors
         ), "rpn_head_out and anchors should have same length, but received rpn_head_out' length is {} and anchors' length is {}".format(
@@ -150,8 +155,7 @@ class AnchorRPN(object):
             anchor_box=anchors,
             gt_boxes=inputs['gt_bbox'],
             is_crowd=inputs['is_crowd'],
-            im_info=inputs['im_info'],
-            open_debug=inputs['open_debug'])
+            im_info=inputs['im_info'])
         outs = {
             'rpn_score_pred': score_pred,
             'rpn_score_target': score_tgt,
@@ -204,8 +208,6 @@ class Proposal(object):
         self.proposal_generator = proposal_generator
         self.proposal_target_generator = proposal_target_generator
         self.bbox_post_process = bbox_post_process
-        self.proposal_list = []
-        self.targets_list = []
 
     def generate_proposal(self, inputs, rpn_head_out, anchor_out):
         rpn_rois_list = []
@@ -230,21 +232,26 @@ class Proposal(object):
         start_level = 2
         end_level = start_level + len(rpn_head_out)
         rois_collect, rois_num_collect = fluid.layers.collect_fpn_proposals(
-            rpn_rois_list, rpn_prob_list, start_level, end_level,
-            post_nms_top_n)
+            rpn_rois_list,
+            rpn_prob_list,
+            start_level,
+            end_level,
+            post_nms_top_n,
+            multi_rois_num=rpn_rois_num_list,
+            return_rois_num=True)
         return rois_collect, rois_num_collect
 
     def generate_proposal_target(self, inputs, rois, rois_num, stage=0):
         outs = self.proposal_target_generator(
             rpn_rois=rois,
-            rpn_rois_nums=rois_num,
+            rpn_rois_num=rois_num,
             gt_classes=inputs['gt_class'],
             is_crowd=inputs['is_crowd'],
             gt_boxes=inputs['gt_bbox'],
             im_info=inputs['im_info'],
             stage=stage)
         rois = outs[0]
-        rois_nums = outs[-1]
+        rois_num = outs[-1]
         targets = {
             'labels_int32': outs[1],
             'bbox_targets': outs[2],
@@ -284,6 +291,9 @@ class Proposal(object):
         if stage == 0:
             roi, rois_num = self.generate_proposal(inputs, rpn_head_out,
                                                    anchor_out)
+            self.proposals_list = []
+            self.targets_list = []
+
         else:
             bbox_delta = bbox_head_outs[stage][0]
             roi = self.refine_bbox(proposal_out[0], bbox_delta, stage - 1)
@@ -295,10 +305,10 @@ class Proposal(object):
         self.proposals_list.append((roi, rois_num))
         return roi, rois_num
 
-    def get_targets():
+    def get_targets(self):
         return self.targets_list
 
-    def get_proposals():
+    def get_proposals(self):
         return self.proposals_list
 
     def post_process(self, inputs, bbox_head_out, rois):

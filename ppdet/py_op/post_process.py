@@ -3,40 +3,42 @@ import os
 import numpy as np
 from numba import jit
 from .bbox import delta2bbox, clip_bbox, expand_bbox, nms
+import pycocotools.mask as mask_util
+import cv2
 
 
 def bbox_post_process(bboxes,
-                      bbox_probs,
+                      bbox_prob,
                       bbox_deltas,
                       im_info,
                       keep_top_k=100,
                       score_thresh=0.05,
                       nms_thresh=0.5,
                       class_nums=81,
-                      bbox_reg_weights=[0.1, 0.1, 0.2, 0.2]):
+                      bbox_reg_weights=[0.1, 0.1, 0.2, 0.2],
+                      with_background=True):
     bbox, bbox_num = bboxes
     new_bbox = [[] for _ in range(len(bbox_num))]
-    new_bbox_num = [0]
+    new_bbox_num = []
     st_num = 0
     end_num = 0
     for i in range(len(bbox_num)):
         box_num = bbox_num[i]
-        end_num += bbox_num
+        end_num += box_num
 
         boxes = bbox[st_num:end_num, :]  # bbox 
         boxes = boxes / im_info[i][2]  # scale
-        bbox_delta = bbox_deltas[st_num:end_num, :]  # bbox delta 
-
+        bbox_delta = bbox_deltas[st_num:end_num, :, :]  # bbox delta 
+        bbox_delta = np.reshape(bbox_delta, (box_num, -1))
         # step1: decode 
         boxes = delta2bbox(bbox_delta, boxes, bbox_reg_weights)
 
         # step2: clip 
         boxes = clip_bbox(boxes, im_info[i][:2] / im_info[i][2])
-
         # step3: nms 
         cls_boxes = [[] for _ in range(class_nums)]
-        scores_n = bbox_probs[st_num:end_num, :]
-        for j in range(1, class_nums):
+        scores_n = bbox_prob[st_num:end_num, :]
+        for j in range(with_background, class_nums):
             inds = np.where(scores_n[:, j] > score_thresh)[0]
             scores_j = scores_n[inds, j]
             rois_j = boxes[inds, j * 4:(j + 1) * 4]
@@ -54,27 +56,28 @@ def bbox_post_process(bboxes,
 
         # Limit to max_per_image detections **over all classes**
         image_scores = np.hstack(
-            [cls_boxes[j][:, 1] for j in range(1, class_nums)])
+            [cls_boxes[j][:, 1] for j in range(with_background, class_nums)])
         if len(image_scores) > keep_top_k:
             image_thresh = np.sort(image_scores)[-keep_top_k]
-            for j in range(1, class_nums):
+            for j in range(with_background, class_nums):
                 keep = np.where(cls_boxes[j][:, 1] >= image_thresh)[0]
                 cls_boxes[j] = cls_boxes[j][keep, :]
-        new_bbox_n = np.vstack([cls_boxes[j] for j in range(1, class_nums)])
+        new_bbox_n = np.vstack(
+            [cls_boxes[j] for j in range(with_background, class_nums)])
         new_bbox[i] = new_bbox_n
         new_bbox_num.append(len(new_bbox_n))
     new_bbox = np.vstack([new_bbox[k] for k in range(len(bbox_num))])
-    new_bbox_num = np.array(new_bbox_num)
-    return new_bbox_num, new_bbox
+    new_bbox_num = np.array(new_bbox_num).astype('int32')
+    return new_bbox, new_bbox_num
 
 
 @jit
-def mask_post_process(bboxes, masks, im_info, resolution=14):
-    import pycocotools.mask as mask_util
+def mask_post_process(bboxes, masks, im_info, resolution=14, binary_thresh=0.5):
     if masks.shape[0] == 0:
         return masks
     bbox, bbox_nums = bboxes
-    scale = (resolution + 2.0) / resolution
+    M = resolution
+    scale = (M + 2.0) / M
     boxes = bbox[:, 2:]
     labels = bbox[:, 0]
     segms_results = [[] for _ in range(len(bbox_nums))]
@@ -106,7 +109,7 @@ def mask_post_process(bboxes, masks, im_info, resolution=14):
             h = np.maximum(h, 1)
 
             mask = cv2.resize(padded_mask, (w, h))
-            mask = np.array(mask > cfg.mrcnn_thresh_binarize, dtype=np.uint8)
+            mask = np.array(mask > binary_thresh, dtype=np.uint8)
             im_mask = np.zeros((im_h, im_w), dtype=np.uint8)
 
             x_0 = max(ref_box[0], 0)
@@ -128,13 +131,11 @@ def mask_post_process(bboxes, masks, im_info, resolution=14):
 
 
 @jit
-def get_det_res(bboxes, bbox_nums, image_id, image_shape, num_id_to_cat_id_map):
+def get_det_res(bboxes, bbox_nums, image_id, num_id_to_cat_id_map):
     det_res = []
     k = 0
     for i in range(len(bbox_nums)):
         image_id = int(image_id[i][0])
-        image_width = int(image_shape[i][1])
-        image_height = int(image_shape[i][2])
 
         det_nums = bbox_nums[i]
         for j in range(det_nums):

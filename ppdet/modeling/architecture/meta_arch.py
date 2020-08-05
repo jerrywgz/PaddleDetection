@@ -31,11 +31,15 @@ class BaseArch(Layer):
 
     def build_inputs(self, data, input_def):
         inputs = {}
-        for name, input in zip(input_def, data):
-            print('data: ', len(data), data[0][0].shape, data[0][1].shape)
-            print('name: {}, input: {}'.format(name, input))
-            v = to_variable(np.array(input))
-            inputs[name] = v
+        for name in input_def:
+            inputs[name] = []
+        batch_size = len(data)
+        for bs in range(batch_size):
+            for name, input in zip(input_def, data[bs]):
+                input_v = np.array(input)[np.newaxis, ...]
+                inputs[name].append(input_v)
+        for name in input_def:
+            inputs[name] = to_variable(np.concatenate(inputs[name]))
         return inputs
 
     def model_arch(self, mode):

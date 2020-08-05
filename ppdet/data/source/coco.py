@@ -78,7 +78,6 @@ class COCODataSet(DataSet):
         from pycocotools.coco import COCO
         coco = COCO(anno_path)
         img_ids = coco.getImgIds()
-        #img_ids = [506130]
         cat_ids = coco.getCatIds()
         records = []
         ct = 0

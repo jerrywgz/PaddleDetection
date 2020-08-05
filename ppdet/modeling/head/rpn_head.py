@@ -18,10 +18,14 @@ class RPNFeat(Layer):
             filter_size=3,
             padding=1,
             act='relu',
-            param_attr=ParamAttr(initializer=Normal(
-                loc=0., scale=0.01)),
+            param_attr=ParamAttr(
+                #name="conv_rpn_fpn2_w", 
+                initializer=Normal(
+                    loc=0., scale=0.01)),
             bias_attr=ParamAttr(
-                learning_rate=2., regularizer=L2Decay(0.)))
+                #name="conv_rpn_fpn2_b",
+                learning_rate=2.,
+                regularizer=L2Decay(0.)))
 
     def forward(self, inputs, feats):
         rpn_feats = []
@@ -47,10 +51,14 @@ class RPNHead(Layer):
             filter_size=1,
             padding=0,
             act=None,
-            param_attr=ParamAttr(initializer=Normal(
-                loc=0., scale=0.01)),
+            param_attr=ParamAttr(
+                #name="rpn_cls_logits_fpn2_w",
+                initializer=Normal(
+                    loc=0., scale=0.01)),
             bias_attr=ParamAttr(
-                learning_rate=2., regularizer=L2Decay(0.)))
+                #name="rpn_cls_logits_fpn2_b",
+                learning_rate=2.,
+                regularizer=L2Decay(0.)))
 
         # rpn roi bbox regression deltas
         self.rpn_rois_delta = Conv2D(
@@ -59,19 +67,23 @@ class RPNHead(Layer):
             filter_size=1,
             padding=0,
             act=None,
-            param_attr=ParamAttr(initializer=Normal(
-                loc=0., scale=0.01)),
+            param_attr=ParamAttr(
+                #name="rpn_bbox_pred_fpn2_w", 
+                initializer=Normal(
+                    loc=0., scale=0.01)),
             bias_attr=ParamAttr(
-                learning_rate=2., regularizer=L2Decay(0.)))
+                #name="rpn_bbox_pred_fpn2_b",
+                learning_rate=2.,
+                regularizer=L2Decay(0.)))
 
-    def forward(self, inputs):
-        rpn_feat = self.rpn_feat(inputs, feats)
+    def forward(self, inputs, feats):
+        rpn_feats = self.rpn_feat(inputs, feats)
         rpn_head_out = []
         for rpn_feat in rpn_feats:
             rrs = self.rpn_rois_score(rpn_feat)
             rrd = self.rpn_rois_delta(rpn_feat)
-            rpn_outs.append((rrs, rrd))
-        return rpn_feat, rpn_head_out
+            rpn_head_out.append((rrs, rrd))
+        return rpn_feats, rpn_head_out
 
     def loss(self, loss_inputs):
         # cls loss
@@ -89,7 +101,11 @@ class RPNHead(Layer):
             sigma=3.0,
             inside_weight=loss_inputs['rpn_rois_weight'],
             outside_weight=loss_inputs['rpn_rois_weight'])
-        loss_rpn_reg = fluid.layers.reduce_mean(
-            loss_rpn_reg, name='loss_rpn_reg')
+        loss_rpn_reg = fluid.layers.reduce_sum(loss_rpn_reg)
+        score_shape = fluid.layers.shape(score_tgt)
+        score_shape = fluid.layers.cast(x=score_shape, dtype='float32')
+        norm = fluid.layers.reduce_prod(score_shape)
+        norm.stop_gradient = True
+        loss_rpn_reg = loss_rpn_reg / norm
 
         return {'loss_rpn_cls': loss_rpn_cls, 'loss_rpn_reg': loss_rpn_reg}

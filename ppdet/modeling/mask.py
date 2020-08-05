@@ -17,7 +17,8 @@ class MaskPostProcess(object):
 
     def __call__(self, bboxes, mask_head_out, im_info):
         # TODO: modify related ops for deploying
-        mask = mask_post_process(bboxes.numpy(),
+        bboxes_np = (i.numpy() for i in bboxes)
+        mask = mask_post_process(bboxes_np,
                                  mask_head_out.numpy(),
                                  im_info.numpy(), self.mask_resolution,
                                  self.binary_thresh)
@@ -34,24 +35,26 @@ class Mask(object):
         self.mask_target_generator = mask_target_generator
         self.mask_post_process = mask_post_process
 
-    def __call__(self, inputs, rois):
-        mask_rois, rois_has_mask_int32 = self.generate_mask_target(inputs, rois)
+    def __call__(self, inputs, rois, targets):
+        mask_rois, rois_has_mask_int32 = self.generate_mask_target(inputs, rois,
+                                                                   targets)
         return mask_rois, rois_has_mask_int32
 
-    def generate_mask_target(self, inputs, rois):
+    def generate_mask_target(self, inputs, rois, targets):
+        labels_int32 = targets['labels_int32']
         proposals, proposals_num = rois
-        mask_rois, self.rois_has_mask_int32, self.mask_int32 = self.mask_target_generator(
+        mask_rois, mask_rois_num, self.rois_has_mask_int32, self.mask_int32 = self.mask_target_generator(
             im_info=inputs['im_info'],
             gt_classes=inputs['gt_class'],
             is_crowd=inputs['is_crowd'],
             gt_segms=inputs['gt_mask'],
             rois=proposals,
-            rois_nums=proposals_num,
-            labels_int32=proposal_out['labels_int32'])
-        self.mask_rois = (mask_rois, proposals_num)
+            rois_num=proposals_num,
+            labels_int32=labels_int32)
+        self.mask_rois = (mask_rois, mask_rois_num)
         return self.mask_rois, self.rois_has_mask_int32
 
-    def get_mask_target():
+    def get_targets(self):
         return self.mask_int32
 
     def post_process(self, bboxes, mask_head_out, im_info):

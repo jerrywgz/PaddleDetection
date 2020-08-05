@@ -180,7 +180,7 @@ def polys_to_mask_wrt_box(polygons, box, M):
     return mask
 
 
-@jit
+#@jit
 def expand_mask_targets(masks, mask_class_labels, resolution, num_classes):
     """Expand masks from shape (#masks, resolution ** 2)
     to (#masks, #classes * resolution ** 2) to encode class
@@ -197,6 +197,7 @@ def expand_mask_targets(masks, mask_class_labels, resolution, num_classes):
         # Ignore background instance
         # (only happens when there is no fg samples in an image)
         if cls > 0:
-            mask_targets[i, start:end] = masks[i, :]
+            for k in range(resolution**2):
+                mask_targets[i, k + start] = masks[i, k]
 
     return mask_targets

@@ -3,9 +3,9 @@ TrainReader:
     fields: ['image', 'im_info', 'im_id', 'gt_bbox', 'gt_class', 'is_crowd', 'gt_mask']
   dataset:
     !COCODataSet
-    image_dir: val2017
-    anno_path: annotations/instances_val2017.json
-    dataset_dir: /paddle/dataset/coco
+    image_dir: train2017
+    anno_path: annotations/instances_train2017.json
+    dataset_dir: dataset/coco
   sample_transforms:
   - !DecodeImage
     to_rgb: true
@@ -30,22 +30,20 @@ TrainReader:
     pad_to_stride: 32
     use_padded_im_info: false
     pad_gt: True
-  batch_size: 2
+  batch_size: 1
   shuffle: true
-  worker_num: 2
+  worker_num: -1
   drop_last: false
   use_process: false
 
 EvalReader:
   inputs_def:
     fields: ['image', 'im_info', 'im_id', 'im_shape']
-    # for voc
-    #fields: ['image', 'im_info', 'im_id', 'gt_bbox', 'gt_class', 'is_difficult']
   dataset:
     !COCODataSet
     image_dir: val2017
     anno_path: annotations/instances_val2017.json
-    dataset_dir: dataset/coco
+    dataset_dir: /paddle/dataset/coco
   sample_transforms:
   - !DecodeImage
     to_rgb: true

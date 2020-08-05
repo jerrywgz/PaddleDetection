@@ -14,7 +14,7 @@ class MaskFeat(Layer):
 
     def __init__(self,
                  mask_roi_extractor,
-                 num_convs=0,
+                 num_convs=1,
                  feat_in=2048,
                  feat_out=256,
                  mask_num_stages=1,
@@ -33,8 +33,8 @@ class MaskFeat(Layer):
             name = 'stage_{}'.format(i)
             mask_conv = Sequential()
             for j in range(self.num_convs):
-                conv_name = 'mask_inter_feat_{}'.format(j)
-                conv = mask_conv.add_sublayer(
+                conv_name = 'mask_inter_feat_{}'.format(j + 1)
+                mask_conv.add_sublayer(
                     conv_name,
                     Conv2D(
                         num_channels=feat_in if j == 1 else feat_out,
@@ -42,10 +42,14 @@ class MaskFeat(Layer):
                         filter_size=3,
                         act='relu',
                         padding=1,
-                        param_attr=ParamAttr(initializer=MSRA(
-                            uniform=False, fan_in=fan_conv)),
+                        param_attr=ParamAttr(
+                            #name=conv_name+'_w', 
+                            initializer=MSRA(
+                                uniform=False, fan_in=fan_conv)),
                         bias_attr=ParamAttr(
-                            learning_rate=2., regularizer=L2Decay(0.))))
+                            #name=conv_name+'_b',
+                            learning_rate=2.,
+                            regularizer=L2Decay(0.))))
             mask_conv.add_sublayer(
                 'conv5_mask',
                 Conv2DTranspose(
@@ -54,10 +58,14 @@ class MaskFeat(Layer):
                     filter_size=2,
                     stride=2,
                     act='relu',
-                    param_attr=ParamAttr(initializer=MSRA(
-                        uniform=False, fan_in=fan_deconv)),
+                    param_attr=ParamAttr(
+                        #name='conv5_mask_w', 
+                        initializer=MSRA(
+                            uniform=False, fan_in=fan_deconv)),
                     bias_attr=ParamAttr(
-                        learning_rate=2., regularizer=L2Decay(0.))))
+                        #name='conv5_mask_b',
+                        learning_rate=2.,
+                        regularizer=L2Decay(0.))))
             upsample = self.add_sublayer(name, mask_conv)
             self.upsample_module.append(upsample)
 
@@ -71,8 +79,7 @@ class MaskFeat(Layer):
         if self.share_bbox_feat:
             rois_feat = fluid.layers.gather(bbox_feat, mask_index)
         else:
-            bbox, bbox_num = bboxes
-            rois_feat = self.mask_roi_extractor(body_feats, bbox, bbox_num,
+            rois_feat = self.mask_roi_extractor(body_feats, bboxes,
                                                 spatial_scale)
         # upsample 
         mask_feat = self.upsample_module[stage](rois_feat)
@@ -104,9 +111,13 @@ class MaskHead(Layer):
                         num_channels=self.feat_in,
                         num_filters=self.num_classes,
                         filter_size=1,
-                        param_attr=ParamAttr(initializer=MSRA(uniform=False)),
+                        param_attr=ParamAttr(
+                            #name='mask_fcn_logits_w', 
+                            initializer=MSRA(uniform=False)),
                         bias_attr=ParamAttr(
-                            learning_rate=2., regularizer=L2Decay(0.0)))))
+                            #name='mask_fcn_logits_b',
+                            learning_rate=2.,
+                            regularizer=L2Decay(0.0)))))
 
     def forward_train(self,
                       body_feats,
@@ -139,9 +150,10 @@ class MaskHead(Layer):
                 for n in range(num):
                     im_info_expand.append(im_info[idx, -1])
             im_info_expand = fluid.layers.concat(im_info_expand)
-            rois = fluid.layers.elementwise_mul(
+            scaled_bbox = fluid.layers.elementwise_mul(
                 bbox[:, 2:], im_info_expand, axis=0)
-            mask_feat = self.mask_feat(body_feats, bboxes, bbox_feat,
+            scaled_bboxes = (scaled_bbox, bbox_num)
+            mask_feat = self.mask_feat(body_feats, scaled_bboxes, bbox_feat,
                                        mask_index, spatial_scale, stage)
             mask_logit = self.mask_fcn_logits[stage](mask_feat)
             mask_head_out = fluid.layers.sigmoid(mask_logit)
@@ -156,18 +168,18 @@ class MaskHead(Layer):
                 spatial_scale,
                 stage=0):
         if inputs['mode'] == 'train':
-            mask_head_out = forward_train(body_feats, bboxes, bbox_feat,
-                                          mask_index, spatial_scale, stage)
+            mask_head_out = self.forward_train(body_feats, bboxes, bbox_feat,
+                                               mask_index, spatial_scale, stage)
         else:
             im_info = inputs['im_info']
-            mask_head_out = forward_test(im_info, body_feats, bboxes, bbox_feat,
-                                         mask_index, spatial_scale, stage)
+            mask_head_out = self.forward_test(im_info, body_feats, bboxes,
+                                              bbox_feat, mask_index,
+                                              spatial_scale, stage)
         return mask_head_out
 
-    def loss(self, mask_head_out, mask_targets):
-        reshape_dim = self.num_classes * self.mask_resolution * self.mask_resolution
-        mask_logits = fluid.layers.reshape(mask_head_out, (-1, reshape_dim))
-        mask_label = fluid.layers.cast(x=mask_targets, dtype='float32')
+    def loss(self, mask_head_out, mask_target):
+        mask_logits = fluid.layers.flatten(mask_head_out)
+        mask_label = fluid.layers.cast(x=mask_target, dtype='float32')
 
         loss_mask = fluid.layers.sigmoid_cross_entropy_with_logits(
             x=mask_logits, label=mask_label, ignore_index=-1, normalize=True)

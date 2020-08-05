@@ -1,19 +1,31 @@
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
-import os
+import os, sys
+# add python path of PadleDetection to sys.path
+parent_path = os.path.abspath(os.path.join(__file__, *(['..'] * 2)))
+if parent_path not in sys.path:
+    sys.path.append(parent_path)
+
 import time
 # ignore numba warning
 import warnings
 warnings.filterwarnings('ignore')
 import random
+import datetime
 import numpy as np
+from collections import deque
 import paddle.fluid as fluid
 from ppdet.core.workspace import load_config, merge_config, create
 from ppdet.data.reader import create_reader
+from ppdet.utils.stats import TrainingStats
 from ppdet.utils.check import check_gpu, check_version, check_config
 from ppdet.utils.cli import ArgsParser
 from ppdet.utils.checkpoint import load_dygraph_ckpt, save_dygraph_ckpt
+import logging
+FORMAT = '%(asctime)s-%(levelname)s: %(message)s'
+logging.basicConfig(level=logging.INFO, format=FORMAT)
+logger = logging.getLogger(__name__)
 
 
 def parse_args():
@@ -100,12 +112,12 @@ def run(FLAGS, cfg):
     optimizer = create('OptimizerBuilder')(lr, model.parameters())
 
     # Init Model & Optimzer   
-    #model = load_dygraph_ckpt(
-    #    model,
-    #    optimizer,
-    #    cfg.pretrain_weights,
-    #    cfg.weights,
-    #    FLAGS.ckpt_type)
+    model = load_dygraph_ckpt(
+        model,
+        optimizer,
+        cfg.pretrain_weights,
+        ckpt_type=FLAGS.ckpt_type,
+        load_static_weights=cfg.load_static_weights)
 
     # Parallel Model 
     if FLAGS.use_parallel:
@@ -124,10 +136,18 @@ def run(FLAGS, cfg):
         cfg,
         devices_num=devices_num)
 
+    time_stat = deque(maxlen=cfg.log_smooth_window)
+    start_time = time.time()
+    end_time = time.time()
     # Run Train 
     for iter_id, data in enumerate(train_reader()):
-        print('train_reader: ', data)
-        start_time = time.time()
+
+        start_time = end_time
+        end_time = time.time()
+        time_stat.append(end_time - start_time)
+        time_cost = np.mean(time_stat)
+        eta_sec = (cfg.max_iters - iter_id) * time_cost
+        eta = str(datetime.timedelta(seconds=int(eta_sec)))
 
         # Model Forward
         model.train()
@@ -144,17 +164,17 @@ def run(FLAGS, cfg):
             loss.backward()
         optimizer.minimize(loss)
         model.clear_gradients()
+        curr_lr = optimizer.current_step_lr()
 
         # Log state 
-        cost_time = time.time() - start_time
-        # TODO: check this method   
-        curr_lr = optimizer.current_step_lr()
-        log_info = "iter: {}, time: {:.4f}, lr: {:.6f}".format(
-            iter_id, cost_time, curr_lr)
-        for k, v in outputs.items():
-            log_info += ", {}: {:.6f}".format(k, v.numpy()[0])
-        print(log_info)
-
+        if iter_id == 0:
+            train_stats = TrainingStats(cfg.log_smooth_window, outputs.keys())
+        train_stats.update(outputs)
+        logs = train_stats.log()
+        if iter_id % cfg.log_iter == 0:
+            strs = 'iter: {}, lr: {:.6f}, {}, time: {:.3f}, eta: {}'.format(
+                iter_id, curr_lr, logs, time_cost, eta)
+            logger.info(strs)
         # Save Stage 
         if iter_id > 0 and iter_id % int(
                 cfg.snapshot_iter) == 0 and fluid.dygraph.parallel.Env(

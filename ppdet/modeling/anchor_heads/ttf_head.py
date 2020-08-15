@@ -39,7 +39,6 @@ class TTFHead(object):
             128 by default.
         num_classes(int): the number of classes, 80 by default.
         hm_weight(float): the weight of heatmap branch. 1. by default.
-        wh_weight(float): the weight of wh branch. 5. by default.
         wh_offset_base(flaot): the base offset of width and height. 
             16. by default.
         planes(tuple): the channel number of convolution in each upsample. 
@@ -74,7 +73,6 @@ class TTFHead(object):
                  head_conv=128,
                  num_classes=80,
                  hm_weight=1.,
-                 wh_weight=5.,
                  wh_offset_base=16.,
                  planes=(256, 128, 64),
                  shortcut_num=(1, 2, 3),
@@ -95,7 +93,6 @@ class TTFHead(object):
         self.head_conv = head_conv
         self.num_classes = num_classes
         self.hm_weight = hm_weight
-        self.wh_weight = wh_weight
         self.wh_offset_base = wh_offset_base
         self.planes = planes
         self.shortcut_num = shortcut_num
@@ -108,7 +105,6 @@ class TTFHead(object):
         self.max_per_img = max_per_img
         self.down_ratio = base_down_ratio // 2**len(planes)
         self.hm_weight = hm_weight
-        self.wh_weight = wh_weight
         self.wh_loss = wh_loss
         self.dcn_upsample = dcn_upsample
         self.dcn_head = dcn_head
@@ -396,15 +392,21 @@ class TTFLiteHead(TTFHead):
                  num_classes=80,
                  planes=(96, 48, 24),
                  wh_conv=24,
-                 wh_loss='GiouLoss'):
+                 wh_loss='GiouLoss',
+                 shortcut_num=(1, 2, 3),
+                 hm_head_conv_num=2,
+                 wh_offset_base=16):
         super(TTFLiteHead, self).__init__(
             head_conv=head_conv,
             num_classes=num_classes,
             planes=planes,
             wh_conv=wh_conv,
-            wh_loss=wh_loss)
+            wh_loss=wh_loss,
+            shortcut_num=shortcut_num,
+            hm_head_conv_num=hm_head_conv_num,
+            wh_offset_base=wh_offset_base)
 
-    def _lite_conv(self, x, out_c, act=None, name=None):
+    def _lite_conv(self, x, out_c, act=None, name=None, filter_size=5):
         conv1 = ConvNorm(
             input=x,
             num_filters=out_c,
@@ -412,12 +414,12 @@ class TTFLiteHead(TTFHead):
             norm_type='bn',
             act=act,
             initializer=Xavier(),
-            name=name + '.pointwise',
-            norm_name=name + '.pointwise.bn')
+            name=name + '.expand',
+            norm_name=name + '.expand.bn')
         conv2 = ConvNorm(
             input=conv1,
             num_filters=out_c,
-            filter_size=5,
+            filter_size=filter_size,
             norm_type='bn',
             groups=out_c,
             act=act,
@@ -429,19 +431,19 @@ class TTFLiteHead(TTFHead):
             num_filters=out_c,
             filter_size=1,
             norm_type='bn',
-            act=act,
             initializer=Xavier(),
-            name=name + '.normal',
-            norm_name=name + '.normal.bn')
-
-        return conv3
+            name=name + '.project',
+            norm_name=name + '.project.bn')
+        if x.shape[0] != out_c:
+            return conv3
+        return x + conv3
 
     def shortcut(self, x, out_c, layer_num, name=None):
         assert layer_num > 0
         for i in range(layer_num):
             param_name = name + '.layers.' + str(i * 2)
             act = 'relu6' if i < layer_num - 1 else None
-            x = self._lite_conv(x, out_c, act, param_name)
+            x = self._lite_conv(x, out_c, 'relu6', param_name)
         return x
 
     def _deconv_upsample(self, x, out_c, name=None):
@@ -449,11 +451,11 @@ class TTFLiteHead(TTFHead):
             input=x,
             num_filters=out_c,
             filter_size=1,
-            norm_type='bn',
             act='relu6',
-            name=name + '.pointwise',
+            norm_type='bn',
             initializer=Xavier(),
-            norm_name=name + '.pointwise.bn')
+            name=name + '.expand',
+            norm_name=name + '.expand.bn')
         conv2 = fluid.layers.conv2d_transpose(
             input=conv1,
             num_filters=out_c,
@@ -461,8 +463,7 @@ class TTFLiteHead(TTFHead):
             padding=1,
             stride=2,
             groups=out_c,
-            param_attr=ParamAttr(
-                name=name + '.deconv.weights', initializer=Xavier()),
+            param_attr=ParamAttr(name=name + '.deconv.weights'),
             bias_attr=False)
         bn = fluid.layers.batch_norm(
             input=conv2,
@@ -478,20 +479,56 @@ class TTFLiteHead(TTFHead):
             num_filters=out_c,
             filter_size=1,
             norm_type='bn',
-            act='relu6',
-            name=name + '.normal',
             initializer=Xavier(),
-            norm_name=name + '.normal.bn')
-        return conv3
+            name=name + '.project',
+            norm_name=name + '.project.bn')
+        if x.shape[1] != out_c:
+            return conv3
+        return x + conv3
+
+    def _se_conv(self, x, out_c, act, name):
+        pool = fluid.layers.pool2d(
+            input=x, pool_type='avg', global_pooling=True)
+        """
+        conv1 = fluid.layers.conv2d(
+            input=pool,
+            filter_size=1,
+            num_filters=out_c // 4,
+            act=act,
+            param_attr=ParamAttr(
+                name=name + '.1.weights'),
+            bias_attr=ParamAttr(
+                name=name + '.1.offset'))
+        conv2 = fluid.layers.conv2d(
+            input=conv1,
+            filter_size=1,
+            num_filters=out_c,
+            act=act,
+            param_attr=ParamAttr(
+                name=name + '.2.weights'),
+            bias_attr=ParamAttr(
+                name=name + '.2.offset'))
+        """
+        conv1 = ConvNorm(
+            input=pool,
+            num_filters=out_c,
+            filter_size=1,
+            norm_type='bn',
+            initializer=Xavier(),
+            name=name + '.cem',
+            norm_name=name + '.cem.bn')
+        return conv1
 
     def _interp_upsample(self, x, out_c, name=None):
-        conv = self._lite_conv(x, out_c, 'relu6', name)
+        conv = self._lite_conv(x, out_c, 'relu6', name + '.kernel5', 5)
         up = fluid.layers.resize_bilinear(conv, scale=2)
         return up
 
     def upsample(self, x, out_c, name=None):
         deconv_up = self._deconv_upsample(x, out_c, name=name + '.deconv_up')
+        #se_out = self._se_conv(x, out_c, 'relu6', name + '.se')
         interp_up = self._interp_upsample(x, out_c, name=name + '.interp_up')
+        #return fluid.layers.elementwise_add(deconv_up, se_out, axis=0) + interp_up
         return deconv_up + interp_up
 
     def _head(self,
@@ -514,23 +551,65 @@ class TTFLiteHead(TTFHead):
             param_attr=ParamAttr(name='{}.{}.weight'.format(name, conv_num)),
             bias_attr=ParamAttr(
                 learning_rate=2.,
+                initializer=conv_b_init,
                 regularizer=L2Decay(0.),
-                name='{}.{}.bias'.format(name, conv_num),
-                initializer=conv_b_init))
+                name='{}.{}.bias'.format(name, conv_num)))
         return x
+
+    def _downsample(self, x, name, out_c=192):
+        """
+        pool = fluid.layers.pool2d(x, 1, 'avg', pool_stride=2)
+        down = ConvNorm(pool,
+            num_filters=out_c,
+            filter_size=1,
+            norm_type='bn',
+            act='relu6',
+            norm_name=name + '.bn',
+            initializer=Xavier(),
+            name=name)
+        return down
+        """
+        print('x.shape: ', x.shape[1])
+        x = ConvNorm(
+            x,
+            num_filters=out_c,
+            filter_size=1,
+            norm_type='bn',
+            act='relu6',
+            norm_name=name + '.bn',
+            initializer=Xavier(),
+            name=name)
+
+        down = fluid.layers.conv2d(
+            input=x,
+            num_filters=out_c,
+            filter_size=3,
+            stride=2,
+            padding=1,
+            groups=out_c,
+            param_attr=ParamAttr(
+                name=name + "_w", initializer=Xavier()),
+            bias_attr=ParamAttr(
+                name=name + "_b", learning_rate=2., regularizer=L2Decay(0.)),
+            name=name)
+        return down
 
     def get_output(self, input, name=None, is_test=False):
         feat = input[-1]
+        feat = self._downsample(
+            feat, name=name + '.downsample', out_c=self.planes[0] * 2)
         for i, out_c in enumerate(self.planes):
             feat = self.upsample(
                 feat, out_c, name=name + '.deconv_layers.' + str(i))
             if i < self.shortcut_len:
                 shortcut = self.shortcut(
-                    input[-i - 2],
+                    input[-i - 1],
                     out_c,
                     self.shortcut_num[i],
                     name=name + '.shortcut_layers.' + str(i))
+                #print('shape before concat, feat: {}, shortcut: {}'.format(feat.shape, shortcut.shape))
                 feat = fluid.layers.concat([feat, shortcut], axis=1)
+                #feat = feat + shortcut
 
         hm = self.hm_head(feat, name=name + '.hm')
         wh = self.wh_head(feat, name=name + '.wh') * self.wh_offset_base

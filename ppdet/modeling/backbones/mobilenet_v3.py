@@ -454,7 +454,8 @@ class MobileNetV3RCNN(MobileNetV3):
             norm_type=norm_type,
             norm_decay=norm_decay,
             lr_mult_list=lr_mult_list,
-            feature_maps=feature_maps)
+            feature_maps=feature_maps,
+            freeze_norm=freeze_norm)
         self.curr_stage = 0
         self.block_stride = 1
 

@@ -5,7 +5,7 @@ log_smooth_window: 20
 save_dir: output
 snapshot_iter: 1000
 metric: COCO
-pretrain_weights: https://paddle-imagenet-models-name.bj.bcebos.com/MobileNetV3_small_x0_35_pretrained.tar
+pretrain_weights: https://paddle-imagenet-models-name.bj.bcebos.com/MobileNetV3_large_x1_0_ssld_pretrained.tar
 weights: output/ttfnet_mobilenetv3/model_final
 num_classes: 80
 
@@ -15,14 +15,18 @@ TTFNet:
 
 MobileNetV3RCNN:
   norm_type: sync_bn
+  freeze_norm: false
   norm_decay: 0.0
-  model_name: small
-  scale: 0.35
-  conv_decay: 0.00001
+  feature_maps: [2, 3, 4, 5]
   lr_mult_list: [0.25, 0.25, 0.5, 0.5, 0.75]
+  model_name: large
+  scale: 1.0
+  conv_decay: 0.00001
 
 TTFLiteHead:
   head_conv: 48
+  wh_conv: 24
+  shortcut_num: [1,2,2]
 
 GiouLoss:
   loss_weight: 5.
@@ -30,19 +34,19 @@ GiouLoss:
   use_class_weight: false
 
 LearningRate:
-  base_lr: 0.0075 #0.015
+  base_lr: 0.015
   schedulers:
   - !PiecewiseDecay
     gamma: 0.1
     milestones:
-    - 22500 #112500
-    - 27500 #137500
+    - 22500
+    - 27500
   - !LinearWarmup
     start_factor: 0.2
-    steps: 1000
+    steps: 500
 
 OptimizerBuilder:
-  #clip_grad_by_norm: 35
+  clip_grad_by_norm: 35
   optimizer:
     momentum: 0.9
     type: Momentum
@@ -62,8 +66,12 @@ TrainReader:
   sample_transforms:
   - !DecodeImage
     to_rgb: true
+    #with_cutmix: True
+  #- !CutmixImage
+  #  alpha: 1.5
+  #  beta: 1.5
   - !Resize
-    target_dim: 512
+    target_dim: 320
   - !RandomFlipImage
     prob: 0.5
   - !NormalizeImage
@@ -85,10 +93,11 @@ TrainReader:
   worker_num: 8
   bufsize: 2
   use_process: true
+  #cutmix_epoch: 66
 
 EvalReader:
   inputs_def:
-    image_shape: [3, 512, 512]
+    image_shape: [3, 320, 320]
     fields: ['image', 'im_id', 'scale_factor']
   dataset:
     !COCODataSet
@@ -100,7 +109,7 @@ EvalReader:
     - !DecodeImage
       to_rgb: True
     - !Resize
-      target_dim: 512
+      target_dim: 320
     - !NormalizeImage
       mean: [123.675, 116.28, 103.53]
       std: [58.395, 57.12, 57.375]
@@ -116,7 +125,7 @@ EvalReader:
 
 TestReader:
   inputs_def:
-    image_shape: [3, 512, 512]
+    image_shape: [3, 320, 320]
     fields: ['image', 'im_id', 'scale_factor']
   dataset:
     !ImageFolder
@@ -127,7 +136,7 @@ TestReader:
       to_rgb: True
     - !Resize
       interp: 1
-      target_dim: 512
+      target_dim: 320
     - !NormalizeImage
       mean: [123.675, 116.28, 103.53]
       std: [58.395, 57.12, 57.375]

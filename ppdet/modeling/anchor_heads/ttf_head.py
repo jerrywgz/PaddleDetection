@@ -348,7 +348,7 @@ class TTFHead(object):
         return pred, target, weight
 
     def get_loss(self, pred_hm, pred_wh, target_hm, box_target, target_weight):
-        pred_hm = paddle.tensor.clamp(
+        pred_hm = paddle.tensor.clip(
             fluid.layers.sigmoid(pred_hm), 1e-4, 1 - 1e-4)
         hm_loss = self.ct_focal_loss(pred_hm, target_hm) * self.hm_weight
         shape = fluid.layers.shape(target_hm)

@@ -27,7 +27,7 @@ import numpy as np
 from scipy import ndimage
 
 from .operators import register_op, BaseOperator
-from .op_helper import jaccard_overlap, gaussian2D
+from .op_helper import jaccard_overlap, gaussian2D, auto_gaussian_thresh
 
 logger = logging.getLogger(__name__)
 
@@ -528,6 +528,7 @@ class Gt2TTFTarget(BaseOperator):
         output_size = samples[0]['image'].shape[1]
         feat_size = output_size // self.down_ratio
         for sample in samples:
+            thresh = auto_gaussian_thresh(sample['curr_iter'])
             heatmap = np.zeros(
                 (self.num_classes, feat_size, feat_size), dtype='float32')
             box_target = np.ones(
@@ -567,7 +568,7 @@ class Gt2TTFTarget(BaseOperator):
                                             w_radiuses_alpha[k])
 
                 heatmap[cls_id] = np.maximum(heatmap[cls_id], fake_heatmap)
-                box_target_inds = fake_heatmap > 0
+                box_target_inds = fake_heatmap > thresh
                 box_target[:, box_target_inds] = gt_bbox[k][:, None]
 
                 local_heatmap = fake_heatmap[box_target_inds]
@@ -593,6 +594,7 @@ class Gt2TTFTarget(BaseOperator):
         top, bottom = min(y, h_radius), min(height - y, h_radius + 1)
 
         masked_heatmap = heatmap[y - top:y + bottom, x - left:x + right]
+
         masked_gaussian = gaussian[h_radius - top:h_radius + bottom, w_radius -
                                    left:w_radius + right]
         if min(masked_gaussian.shape) > 0 and min(masked_heatmap.shape) > 0:

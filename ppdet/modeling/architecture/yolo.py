@@ -43,8 +43,18 @@ class YOLOv3(BaseArch):
         bbox, bbox_num = self.anchor.post_process(
             self.inputs['im_size'], self.yolo_head_out, self.mask_anchors)
         outs = {
-            "bbox": bbox.numpy(),
-            "bbox_num": bbox_num,
+            'bbox': bbox.numpy(),
+            'bbox_num': bbox_num,
             'im_id': self.inputs['im_id'].numpy()
         }
         return outs
+
+    def export_model(self, exclude_nms=False):
+        output = self.anchor.post_process(self.inputs['im_size'],
+                                          self.yolo_head_out, self.mask_anchors,
+                                          exclude_nms)
+        if exclude_nms:
+            outs = {'bbox': output.numpy()}
+        else:
+            bbox, bbox_num = output
+            outs = {'bbox': bbox, 'bbox_num': bbox_num}

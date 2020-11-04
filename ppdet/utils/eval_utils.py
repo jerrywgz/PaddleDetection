@@ -92,3 +92,42 @@ def eval_results(res, metric, anno_file):
         raise NotImplemented("Only COCO metric is supported now.")
 
     return eval_res
+
+
+def dump_infer_config(FLAGS, config):
+    arch_state = 0
+    cfg_name = os.path.basename(FLAGS.config).split('.')[0]
+    save_dir = os.path.join(FLAGS.output_dir, cfg_name)
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+    from ppdet.core.config.yaml_helpers import setup_orderdict
+    setup_orderdict()
+    infer_cfg = OrderedDict({
+        'use_python_inference': False,
+        'mode': 'fluid',
+        'draw_threshold': 0.5,
+        'metric': config['metric']
+    })
+    infer_arch = config['architecture']
+
+    for arch, min_subgraph_size in TRT_MIN_SUBGRAPH.items():
+        if arch in infer_arch:
+            infer_cfg['arch'] = arch
+            infer_cfg['min_subgraph_size'] = min_subgraph_size
+            arch_state = 1
+            break
+    if not arch_state:
+        logger.error(
+            'Architecture: {} is not supported for exporting model now'.format(
+                infer_arch))
+        os._exit(0)
+
+    if 'Mask' in config['architecture']:
+        infer_cfg['mask_resolution'] = config['MaskHead']['resolution']
+    infer_cfg['with_background'], infer_cfg['Preprocess'], infer_cfg[
+        'label_list'] = parse_reader(config['TestReader'], config['metric'],
+                                     infer_cfg['arch'])
+
+    yaml.dump(infer_cfg, open(os.path.join(save_dir, 'infer_cfg.yml'), 'w'))
+    logger.info("Export inference config file to {}".format(
+        os.path.join(save_dir, 'infer_cfg.yml')))

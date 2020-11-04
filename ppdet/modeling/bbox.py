@@ -83,7 +83,7 @@ class BBoxPostProcessYOLO(object):
         self.decode = decode
         self.clip = clip
 
-    def __call__(self, im_size, yolo_head_out, mask_anchors):
+    def __call__(self, im_size, yolo_head_out, mask_anchors, exclude_nms=False):
         # TODO: split yolo_box into 2 steps
         # decode
         # clip
@@ -97,6 +97,9 @@ class BBoxPostProcessYOLO(object):
             scores_list.append(paddle.transpose(scores, perm=[0, 2, 1]))
         yolo_boxes = paddle.concat(boxes_list, axis=1)
         yolo_scores = paddle.concat(scores_list, axis=2)
+        # Only for benchmark, postprocess(NMS) is not needed
+        if exclude_nms:
+            return yolo_scores
         bbox, bbox_num = self.nms(bboxes=yolo_boxes, scores=yolo_scores)
         return bbox, bbox_num
 

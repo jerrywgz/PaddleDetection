@@ -25,8 +25,10 @@ class BaseArch(nn.Layer):
             out = self.loss()
         elif mode == 'infer':
             out = self.infer()
+        elif mode == 'export_model':
+            out = self.export_model()
         else:
-            raise "Now, only support train or infer mode!"
+            raise "Now, only support train, infer and export mode!"
         return out
 
     def build_inputs(self, data, input_def):
@@ -49,4 +51,7 @@ class BaseArch(nn.Layer):
         raise NotImplementedError("Should implement loss method!")
 
     def infer(self, ):
+        raise NotImplementedError("Should implement infer method!")
+
+    def export_model(self, exclude_nms=False):
         raise NotImplementedError("Should implement infer method!")

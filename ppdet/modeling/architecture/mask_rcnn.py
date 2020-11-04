@@ -121,3 +121,11 @@ class MaskRCNN(BaseArch):
         }
         output.update(mask)
         return output
+
+    def export_model(self, exclude_nms=False):
+        output = {
+            'bbox': bbox.numpy(),
+            'bbox_num': bbox_num.numpy(),
+            'mask': self.mask_head_out.numpy()
+        }
+        return output

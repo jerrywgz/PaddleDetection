@@ -464,8 +464,5 @@ def gaussian2D(shape, sigma_x=1, sigma_y=1):
     return h
 
 
-def auto_gaussian_thresh(curr_iter):
-    base = 0
-    step = 0.001
-    interval = 100
-    return base + step * (curr_iter // interval)
+def auto_gaussian_ratio(curr_iter):
+    return 1. / np.log10(curr_iter + 10)

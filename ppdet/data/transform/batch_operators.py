@@ -27,7 +27,7 @@ import numpy as np
 from scipy import ndimage
 
 from .operators import register_op, BaseOperator
-from .op_helper import jaccard_overlap, gaussian2D, auto_gaussian_thresh
+from .op_helper import jaccard_overlap, gaussian2D, auto_gaussian_ratio
 
 logger = logging.getLogger(__name__)
 
@@ -528,7 +528,7 @@ class Gt2TTFTarget(BaseOperator):
         output_size = samples[0]['image'].shape[1]
         feat_size = output_size // self.down_ratio
         for sample in samples:
-            thresh = auto_gaussian_thresh(sample['curr_iter'])
+            #thresh = auto_gaussian_thresh(sample['curr_iter'])
             heatmap = np.zeros(
                 (self.num_classes, feat_size, feat_size), dtype='float32')
             box_target = np.ones(
@@ -557,18 +557,25 @@ class Gt2TTFTarget(BaseOperator):
                  (gt_bbox[:, 1] + gt_bbox[:, 3]) / 2],
                 axis=1) / self.down_ratio
 
-            h_radiuses_alpha = (feat_hs / 2. * self.alpha).astype('int32')
-            w_radiuses_alpha = (feat_ws / 2. * self.alpha).astype('int32')
+            ratio = auto_gaussian_ratio(sample['curr_iter'])
+
+            h_radiuses_alpha = (feat_hs / 2. * self.alpha *
+                                ratio).astype('int32')
+            w_radiuses_alpha = (feat_ws / 2. * self.alpha *
+                                ratio).astype('int32')
 
             for k in range(len(gt_bbox)):
                 cls_id = gt_class[k]
                 fake_heatmap = np.zeros((feat_size, feat_size), dtype='float32')
+                h_radiuses_alpha_k = max(
+                    min(h_radiuses_alpha[k] * np.log(output_size / feat_hs[k]),
+                        feat_hs[k] // 2), 1)
                 self.draw_truncate_gaussian(fake_heatmap, ct_inds[k],
                                             h_radiuses_alpha[k],
                                             w_radiuses_alpha[k])
 
                 heatmap[cls_id] = np.maximum(heatmap[cls_id], fake_heatmap)
-                box_target_inds = fake_heatmap > thresh
+                box_target_inds = fake_heatmap > 0
                 box_target[:, box_target_inds] = gt_bbox[k][:, None]
 
                 local_heatmap = fake_heatmap[box_target_inds]

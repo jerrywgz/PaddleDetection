@@ -26,6 +26,7 @@ from paddle.fluid.regularizer import L2Decay
 from ppdet.core.workspace import register
 from ppdet.modeling.ops import DeformConv, DropBlock
 from ppdet.modeling.losses import GiouLoss
+from ppdet.utils import global_dict
 
 __all__ = ['TTFHead']
 
@@ -340,7 +341,8 @@ class TTFHead(object):
         return focal_loss
 
     def filter_box_by_weight(self, pred, target, weight):
-        index = fluid.layers.where(weight > 0)
+        loss_value = global_dict.get_value('loss', 10.)
+        index = fluid.layers.where(weight > 0.01 / (loss_value + 1e-5))
         index.stop_gradient = True
         weight = fluid.layers.gather_nd(weight, index)
         pred = fluid.layers.gather_nd(pred, index)
@@ -348,7 +350,7 @@ class TTFHead(object):
         return pred, target, weight
 
     def get_loss(self, pred_hm, pred_wh, target_hm, box_target, target_weight):
-        pred_hm = paddle.tensor.clamp(
+        pred_hm = paddle.tensor.clip(
             fluid.layers.sigmoid(pred_hm), 1e-4, 1 - 1e-4)
         hm_loss = self.ct_focal_loss(pred_hm, target_hm) * self.hm_weight
         shape = fluid.layers.shape(target_hm)

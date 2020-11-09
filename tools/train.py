@@ -45,6 +45,7 @@ from ppdet.utils.stats import TrainingStats
 from ppdet.utils.cli import ArgsParser
 from ppdet.utils.check import check_gpu, check_version, check_config
 import ppdet.utils.checkpoint as checkpoint
+from ppdet.utils import global_dict
 
 import logging
 FORMAT = '%(asctime)s-%(levelname)s: %(message)s'
@@ -257,11 +258,13 @@ def main():
 
         train_stats.update(stats)
         logs = train_stats.log()
+
         if it % cfg.log_iter == 0 and (not FLAGS.dist or trainer_id == 0):
             ips = float(cfg['TrainReader']['batch_size']) / time_cost
             strs = 'iter: {}, lr: {:.6f}, {}, eta: {}, batch_cost: {:.5f} sec, ips: {:.5f} images/sec'.format(
                 it, np.mean(outs[-1]), logs, eta, time_cost, ips)
             logger.info(strs)
+            global_dict.set_value('loss', train_stats.get()['loss'])
 
         # NOTE : profiler tools, used for benchmark
         if FLAGS.is_profiler and it == 5:
@@ -318,6 +321,7 @@ def main():
 
 if __name__ == '__main__':
     paddle.enable_static()
+    global_dict.__init__()
     parser = ArgsParser()
     parser.add_argument(
         "-r",

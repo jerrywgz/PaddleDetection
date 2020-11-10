@@ -462,3 +462,9 @@ def gaussian2D(shape, sigma_x=1, sigma_y=1):
                                                             sigma_y)))
     h[h < np.finfo(h.dtype).eps * h.max()] = 0
     return h
+
+
+def auto_gaussian_thresh(loss):
+    step = 0.005
+    interval = 100
+    return step / loss

@@ -341,8 +341,9 @@ class TTFHead(object):
         return focal_loss
 
     def filter_box_by_weight(self, pred, target, weight):
-        loss_value = global_dict.get_value('loss', 10.)
-        index = fluid.layers.where(weight > 0.01 / (loss_value + 1e-5))
+        #loss_value = global_dict.get_value('loss', 10.)
+        #index = fluid.layers.where(weight > 0.01 / (loss_value + 1e-5))
+        index = fluid.layers.where(weight > 0.)
         index.stop_gradient = True
         weight = fluid.layers.gather_nd(weight, index)
         pred = fluid.layers.gather_nd(pred, index)

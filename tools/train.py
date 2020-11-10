@@ -264,7 +264,7 @@ def main():
             strs = 'iter: {}, lr: {:.6f}, {}, eta: {}, batch_cost: {:.5f} sec, ips: {:.5f} images/sec'.format(
                 it, np.mean(outs[-1]), logs, eta, time_cost, ips)
             logger.info(strs)
-            global_dict.set_value('loss', train_stats.get()['loss'])
+            global_dict.set_value('loss', float(train_stats.get()['wh_loss']))
 
         # NOTE : profiler tools, used for benchmark
         if FLAGS.is_profiler and it == 5:

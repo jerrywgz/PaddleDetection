@@ -529,8 +529,8 @@ class Gt2TTFTarget(BaseOperator):
         output_size = samples[0]['image'].shape[1]
         feat_size = output_size // self.down_ratio
         loss_value = global_dict.get_value('loss', 10.)
+        thresh = auto_gaussian_thresh(loss_value)
         for sample in samples:
-            thresh = auto_gaussian_thresh(loss_value)
             heatmap = np.zeros(
                 (self.num_classes, feat_size, feat_size), dtype='float32')
             box_target = np.ones(
@@ -571,12 +571,14 @@ class Gt2TTFTarget(BaseOperator):
 
                 heatmap[cls_id] = np.maximum(heatmap[cls_id], fake_heatmap)
                 box_target_inds = fake_heatmap > thresh
+                #box_target_inds = fake_heatmap > 0
                 box_target[:, box_target_inds] = gt_bbox[k][:, None]
 
                 local_heatmap = fake_heatmap[box_target_inds]
                 ct_div = np.sum(local_heatmap)
                 local_heatmap *= boxes_area_topk_log[k]
                 reg_weight[0, box_target_inds] = local_heatmap / ct_div
+            #reg_weight[reg_weight < thresh] = 0.
             sample['ttf_heatmap'] = heatmap
             sample['ttf_box_target'] = box_target
             sample['ttf_reg_weight'] = reg_weight

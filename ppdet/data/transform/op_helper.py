@@ -467,4 +467,4 @@ def gaussian2D(shape, sigma_x=1, sigma_y=1):
 def auto_gaussian_thresh(loss):
     step = 0.005
     interval = 100
-    return step / loss
+    return step / (loss + 1e-5)

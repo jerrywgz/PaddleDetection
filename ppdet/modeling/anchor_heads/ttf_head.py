@@ -342,7 +342,10 @@ class TTFHead(object):
 
     def filter_box_by_weight(self, pred, target, weight):
         #loss_value = global_dict.get_value('loss', 10.)
-        #index = fluid.layers.where(weight > 0.01 / (loss_value + 1e-5))
+        #thresh = 0.01 / (loss_value + 1e-5)
+        #thresh_tensor = paddle.full(shape=paddle.shape(weight), fill_value=thresh, dtype='float32')
+        #fluid.layers.Print(thresh_tensor)
+        #index = fluid.layers.where(weight > thresh_tensor)
         index = fluid.layers.where(weight > 0.)
         index.stop_gradient = True
         weight = fluid.layers.gather_nd(weight, index)

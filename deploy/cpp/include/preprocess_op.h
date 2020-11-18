@@ -39,6 +39,8 @@ class ImageBlob {
   std::vector<float> ori_im_size_f_;
   // Evaluation image width and height
   std::vector<float>  eval_im_size_f_;
+  // Scale factor for image size to origin image size
+  std::vector<float> scale_factor_f_;
 };
 
 // Abstraction of preprocessing opration class
@@ -46,6 +48,12 @@ class PreprocessOp {
  public:
   virtual void Init(const YAML::Node& item, const std::string& arch) = 0;
   virtual void Run(cv::Mat* im, ImageBlob* data) = 0;
+};
+
+class InitInfo : public PreprocessOp{
+ public:
+  virtual void Init(const YAML::Node& item, const std::string& arch) {}
+  virtual void Run(cv::Mat* im, ImageBlob* data);
 };
 
 class Normalize : public PreprocessOp {
@@ -89,9 +97,11 @@ class Resize : public PreprocessOp {
     arch_ = arch;
     interp_ = item["interp"].as<int>();
     max_size_ = item["max_size"].as<int>();
-    target_size_ = item["target_size"].as<int>();
+  if (item["image_shape"].IsDefined()) {
     image_shape_ = item["image_shape"].as<std::vector<int>>();
-  }
+    }
+    target_size_ = item["target_size"].as<int>();
+ }
 
   // Compute best resize scale for x-dimension, y-dimension
   std::pair<float, float> GenerateScale(const cv::Mat& im);
@@ -123,6 +133,8 @@ class Preprocessor {
  public:
   void Init(const YAML::Node& config_node, const std::string& arch) {
     arch_ = arch;
+    // initialize image info at first
+    ops_["InitInfo"] = std::make_shared<InitInfo>();
     for (const auto& item : config_node) {
       auto op_name = item["type"].as<std::string>();
       ops_[op_name] = CreateOp(op_name);
@@ -154,3 +166,4 @@ class Preprocessor {
 };
 
 }  // namespace PaddleDetection
+

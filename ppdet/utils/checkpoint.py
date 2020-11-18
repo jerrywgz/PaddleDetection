@@ -88,7 +88,10 @@ def load_weight(model, weight, optimizer=None):
                          "exists.".format(pdparam_path))
 
     param_state_dict = paddle.load(pdparam_path)
+    #print('model before load: ', model.state_dict())
+    #print('param_state_dict: ', param_state_dict)
     model.set_dict(param_state_dict)
+    #print('model.state_dict: ', model.state_dict())
 
     if optimizer is not None and os.path.exists(path + '.pdopt'):
         optim_state_dict = paddle.load(path + '.pdopt')

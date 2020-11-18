@@ -18,6 +18,7 @@
 #include <vector>
 #include <memory>
 #include <utility>
+#include <ctime>
 
 #include <opencv2/core/core.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
@@ -54,12 +55,14 @@ cv::Mat VisualizeResult(const cv::Mat& img,
 
 class ObjectDetector {
  public:
-  explicit ObjectDetector(const std::string& model_dir, bool use_gpu = false,
-                          const std::string& run_mode = "fluid") {
+  explicit ObjectDetector(const std::string& model_dir, 
+                          bool use_gpu=false,
+                          const std::string& run_mode="fluid",
+                          const int gpu_id=0) {
     config_.load_config(model_dir);
     threshold_ = config_.draw_threshold_;
     preprocessor_.Init(config_.preprocess_info_, config_.arch_);
-    LoadModel(model_dir, use_gpu, config_.min_subgraph_size_, 1, run_mode);
+    LoadModel(model_dir, use_gpu, config_.min_subgraph_size_, 1, run_mode, gpu_id);
   }
 
   // Load Paddle inference model
@@ -68,12 +71,16 @@ class ObjectDetector {
     bool use_gpu,
     const int min_subgraph_size,
     const int batch_size = 1,
-    const std::string& run_mode = "fluid");
+    const std::string& run_mode = "fluid",
+    const int gpu_id=0);
 
   // Run predictor
-  void Predict(
-      const cv::Mat& img,
-      std::vector<ObjectResult>* result);
+  void Predict(const cv::Mat& im,
+      const double threshold = 0.5,
+      const int warmup = 0,
+      const int repeats = 1,
+      const bool run_benchmark = false,
+      std::vector<ObjectResult>* result = nullptr);
 
   // Get Model Label list
   const std::vector<std::string>& GetLabelList() const {

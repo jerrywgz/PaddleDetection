@@ -343,7 +343,8 @@ class MultiClassNMS(object):
                  nms_threshold=.5,
                  normalized=False,
                  nms_eta=1.0,
-                 background_label=0):
+                 background_label=0,
+                 return_rois_num=True):
         super(MultiClassNMS, self).__init__()
         self.score_threshold = score_threshold
         self.nms_top_k = nms_top_k
@@ -352,13 +353,15 @@ class MultiClassNMS(object):
         self.normalized = normalized
         self.nms_eta = nms_eta
         self.background_label = background_label
+        self.return_rois_num = return_rois_num
 
     def __call__(self, bboxes, score):
         kwargs = self.__dict__.copy()
         if isinstance(bboxes, tuple):
             bboxes, bbox_num = bboxes
             kwargs.update({'rois_num': bbox_num})
-        return ops.multiclass_nms(bboxes, score, **kwargs)
+        output = ops.multiclass_nms(bboxes, score, **kwargs)
+        return output
 
 
 @register
@@ -408,17 +411,17 @@ class YOLOBox(object):
         boxes_list = []
         scores_list = []
         im_shape = paddle.cast(im_shape, 'float32')
-        if scale_factor is not None:
-            origin_shape = im_shape / scale_factor
-        else:
-            origin_shape = im_shape
+        #if scale_factor is not None:
+        origin_shape = im_shape / scale_factor
+        #else:
+        #    origin_shape = im_shape
 
         origin_shape = paddle.cast(origin_shape, 'int32')
         for i, head_out in enumerate(yolo_head_out):
             boxes, scores = ops.yolo_box(head_out, origin_shape, anchors[i],
                                          self.num_classes, self.conf_thresh,
                                          self.downsample_ratio // 2**i,
-                                         self.clip_bbox, self.scale_x_y)
+                                         self.clip_bbox, self.scale_x_y, str(i))
             boxes_list.append(boxes)
             scores_list.append(paddle.transpose(scores, perm=[0, 2, 1]))
         yolo_boxes = paddle.concat(boxes_list, axis=1)

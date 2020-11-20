@@ -1,5 +1,5 @@
 architecture: MaskRCNN
-pretrain_weights: https://paddle-imagenet-models-name.bj.bcebos.com/ResNet50_cos_pretrained.tar
+pretrain_weights: https://paddlemodels.bj.bcebos.com/object_detection/mask_rcnn_r50_fpn_1x.tar #https://paddle-imagenet-models-name.bj.bcebos.com/ResNet50_cos_pretrained.tar
 weights: output/mask_rcnn_r50_fpn_1x/model_final
 load_static_weights: True
 
@@ -55,6 +55,7 @@ Anchor:
     negative_overlap: 0.3
     positive_overlap: 0.7
     straddle_thresh: 0.0
+    use_random: False
 
 Proposal:
   proposal_generator:
@@ -73,6 +74,7 @@ Proposal:
     bg_thresh_lo: [0.0,]
     fg_thresh: [0.5,]
     fg_fraction: 0.25
+    use_random: False
 
 BBoxHead:
   bbox_feat:

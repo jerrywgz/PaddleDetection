@@ -34,10 +34,13 @@ class RPNFeat(nn.Layer):
             out_channels=feat_out,
             kernel_size=3,
             padding=1,
-            weight_attr=ParamAttr(initializer=Normal(
-                mean=0., std=0.01)),
+            weight_attr=ParamAttr(
+                name="conv_rpn_fpn2_w", initializer=Normal(
+                    mean=0., std=0.01)),
             bias_attr=ParamAttr(
-                learning_rate=2., regularizer=L2Decay(0.)))
+                name="conv_rpn_fpn2_b",
+                learning_rate=2.,
+                regularizer=L2Decay(0.)))
 
     def forward(self, inputs, feats):
         rpn_feats = []
@@ -62,10 +65,14 @@ class RPNHead(nn.Layer):
             out_channels=anchor_per_position,
             kernel_size=1,
             padding=0,
-            weight_attr=ParamAttr(initializer=Normal(
-                mean=0., std=0.01)),
+            weight_attr=ParamAttr(
+                name="rpn_cls_logits_fpn2_w",
+                initializer=Normal(
+                    mean=0., std=0.01)),
             bias_attr=ParamAttr(
-                learning_rate=2., regularizer=L2Decay(0.)))
+                name="rpn_cls_logits_fpn2_b",
+                learning_rate=2.,
+                regularizer=L2Decay(0.)))
 
         # rpn roi bbox regression deltas
         self.rpn_rois_delta = Conv2D(
@@ -73,10 +80,14 @@ class RPNHead(nn.Layer):
             out_channels=4 * anchor_per_position,
             kernel_size=1,
             padding=0,
-            weight_attr=ParamAttr(initializer=Normal(
-                mean=0., std=0.01)),
+            weight_attr=ParamAttr(
+                name="rpn_bbox_pred_fpn2_w",
+                initializer=Normal(
+                    mean=0., std=0.01)),
             bias_attr=ParamAttr(
-                learning_rate=2., regularizer=L2Decay(0.)))
+                name="rpn_bbox_pred_fpn2_b",
+                learning_rate=2.,
+                regularizer=L2Decay(0.)))
 
     def forward(self, inputs, feats):
         rpn_feats = self.rpn_feat(inputs, feats)

@@ -163,6 +163,9 @@ def run(FLAGS, cfg, place):
             model.train()
             outputs = model(data, cfg['TrainReader']['inputs_def']['fields'],
                             'train')
+            debug_list = outputs['debug_list']
+            for k, v in debug_list.items():
+                print(k, v.numpy().mean())
 
             # Model Backward
             loss = outputs['loss']
@@ -172,11 +175,25 @@ def run(FLAGS, cfg, place):
                 model.apply_collective_grads()
             else:
                 loss.backward()
-            optimizer.minimize(loss)
+            debug_list = outputs.pop('debug_list')
+            for k, v in debug_list.items():
+                print(k + '@GRAD', v._grad_ivar().numpy().mean())
+
+            #optimizer.minimize(loss)
+            #for k, v in debug_list.items():
+            #    print(k+'@minimize', v._grad_ivar().numpy().mean())
+
+            #print('mask_fcn_logits_w_velocity_0 after opt: ', optimizer.state_dict()['mask_fcn_logits_w_velocity_0'].numpy().mean())
             optimizer.step()
+            print('mask_fcn_logits_w_velocity_0 after opt: ',
+                  optimizer.state_dict()['mask_fcn_logits_w_velocity_0'].numpy(
+                  ).mean())
             curr_lr = optimizer.get_lr()
             lr.step()
             optimizer.clear_grad()
+
+            for k, v in debug_list.items():
+                print(k + ' after optimized', v._grad_ivar().numpy().mean())
 
             if ParallelEnv().nranks < 2 or ParallelEnv().local_rank == 0:
                 # Log state 

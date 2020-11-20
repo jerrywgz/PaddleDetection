@@ -118,10 +118,11 @@ def load_pretrain_weight(model,
         for key in model_dict.keys():
             weight_name = model_dict[key].name
             if weight_name in pre_state_dict.keys():
-                logger.info('Load weight: {}, shape: {}'.format(
-                    weight_name, pre_state_dict[weight_name].shape))
+                logger.info('key: {} Load weight: {}, shape: {}'.format(
+                    key, weight_name, pre_state_dict[weight_name].shape))
                 param_state_dict[key] = pre_state_dict[weight_name]
             else:
+                logger.info('lack key: {}, weight: {}'.format(key, weight_name))
                 param_state_dict[key] = model_dict[key]
         model.set_dict(param_state_dict)
         return

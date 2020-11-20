@@ -57,9 +57,12 @@ class MaskFeat(Layer):
                         kernel_size=3,
                         padding=1,
                         weight_attr=ParamAttr(
+                            name=conv_name + '_w',
                             initializer=KaimingNormal(fan_in=fan_conv)),
                         bias_attr=ParamAttr(
-                            learning_rate=2., regularizer=L2Decay(0.))))
+                            name=conv_name + '_b',
+                            learning_rate=2.,
+                            regularizer=L2Decay(0.))))
                 mask_conv.add_sublayer(conv_name + 'act', ReLU())
             mask_conv.add_sublayer(
                 'conv5_mask',
@@ -69,10 +72,13 @@ class MaskFeat(Layer):
                     kernel_size=2,
                     stride=2,
                     weight_attr=ParamAttr(
+                        name='conv5_mask_w',
                         initializer=KaimingNormal(fan_in=fan_deconv)),
                     bias_attr=ParamAttr(
-                        learning_rate=2., regularizer=L2Decay(0.))))
-            mask_conv.add_sublayer(conv_name + 'act', ReLU())
+                        name='conv5_mask_b',
+                        learning_rate=2.,
+                        regularizer=L2Decay(0.))))
+            mask_conv.add_sublayer('conv5_mask_act', ReLU())
             upsample = self.add_sublayer(name, mask_conv)
             self.upsample_module.append(upsample)
 
@@ -90,7 +96,7 @@ class MaskFeat(Layer):
                                                 spatial_scale)
         # upsample 
         mask_feat = self.upsample_module[stage](rois_feat)
-        return mask_feat
+        return rois_feat, mask_feat
 
 
 @register
@@ -118,10 +124,13 @@ class MaskHead(Layer):
                         in_channels=self.feat_in,
                         out_channels=self.num_classes,
                         kernel_size=1,
-                        weight_attr=ParamAttr(initializer=KaimingNormal(
-                            fan_in=self.num_classes)),
+                        weight_attr=ParamAttr(
+                            name='mask_fcn_logits_w',
+                            initializer=KaimingNormal(fan_in=self.num_classes)),
                         bias_attr=ParamAttr(
-                            learning_rate=2., regularizer=L2Decay(0.0)))))
+                            name='mask_fcn_logits_b',
+                            learning_rate=2.,
+                            regularizer=L2Decay(0.0)))))
 
     def forward_train(self,
                       body_feats,
@@ -131,11 +140,14 @@ class MaskHead(Layer):
                       spatial_scale,
                       stage=0):
         # feat
-        mask_feat = self.mask_feat(body_feats, bboxes, bbox_feat, mask_index,
-                                   spatial_scale, stage)
+        rois_feat, mask_feat = self.mask_feat(body_feats, bboxes, bbox_feat,
+                                              mask_index, spatial_scale, stage)
+        #print('self.mask_feat weight: ', self.mask_feat.parameters())
         # logits
         mask_head_out = self.mask_fcn_logits[stage](mask_feat)
-        return mask_head_out
+        mask_fcn_logits_weight = self.mask_fcn_logits[stage].parameters()[0]
+        #print('self.mask_fcn_logits[stage] weight: ', self.mask_fcn_logits[stage].parameters())
+        return mask_fcn_logits_weight, rois_feat, mask_feat, mask_head_out
 
     def forward_test(self,
                      im_info,
@@ -171,14 +183,14 @@ class MaskHead(Layer):
                 spatial_scale,
                 stage=0):
         if inputs['mode'] == 'train':
-            mask_head_out = self.forward_train(body_feats, bboxes, bbox_feat,
-                                               mask_index, spatial_scale, stage)
+            mask_fcn_logits_weight, rois_feat, mask_feat, mask_head_out = self.forward_train(
+                body_feats, bboxes, bbox_feat, mask_index, spatial_scale, stage)
         else:
             im_info = inputs['im_info']
             mask_head_out = self.forward_test(im_info, body_feats, bboxes,
                                               bbox_feat, mask_index,
                                               spatial_scale, stage)
-        return mask_head_out
+        return mask_fcn_logits_weight, rois_feat, mask_feat, mask_head_out
 
     def get_loss(self, mask_head_out, mask_target):
         mask_logits = paddle.flatten(mask_head_out, start_axis=1, stop_axis=-1)
@@ -189,6 +201,7 @@ class MaskHead(Layer):
             label=mask_label,
             ignore_index=-1,
             normalize=True)
+        debug_list = {'mask_logits': mask_logits, 'loss_mask_debug': loss_mask}
         loss_mask = paddle.sum(loss_mask)
 
-        return {'loss_mask': loss_mask}
+        return {'loss_mask': loss_mask}, debug_list

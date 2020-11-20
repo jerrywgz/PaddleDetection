@@ -20,10 +20,11 @@ import math
 import logging
 
 import paddle
+import paddle.fluid as fluid
 import paddle.nn as nn
 
 import paddle.optimizer as optimizer
-import paddle.fluid.regularizer as regularizer
+import paddle.regularizer as regularizer
 from paddle import cos
 
 from ppdet.core.workspace import register, serializable
@@ -139,7 +140,7 @@ class OptimizerBuilder():
                  clip_grad_by_norm=None,
                  regularizer={'type': 'L2',
                               'factor': .0001},
-                 optimizer={'type': 'Momentum',
+                 optimizer={'type': 'MomentumOptimizer',
                             'momentum': .9}):
         self.clip_grad_by_norm = clip_grad_by_norm
         self.regularizer = regularizer

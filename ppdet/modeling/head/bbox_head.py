@@ -47,18 +47,21 @@ class TwoFCHead(nn.Layer):
                     in_dim * resolution * resolution,
                     mlp_dim,
                     weight_attr=ParamAttr(
-                        initializer=XavierUniform(fan_out=fan)),
+                        name='fc6_w', initializer=XavierUniform(fan_out=fan)),
                     bias_attr=ParamAttr(
-                        learning_rate=2., regularizer=L2Decay(0.))))
+                        name='fc6_b', learning_rate=2.,
+                        regularizer=L2Decay(0.))))
             fc6_relu = self.add_sublayer(fc6_name + 'act', ReLU())
             fc7 = self.add_sublayer(
                 fc7_name,
                 nn.Linear(
                     mlp_dim,
                     mlp_dim,
-                    weight_attr=ParamAttr(initializer=XavierUniform()),
+                    weight_attr=ParamAttr(
+                        name='fc7_w', initializer=XavierUniform()),
                     bias_attr=ParamAttr(
-                        learning_rate=2., regularizer=L2Decay(0.))))
+                        name='fc7_b', learning_rate=2.,
+                        regularizer=L2Decay(0.))))
             fc7_relu = self.add_sublayer(fc7_name + 'act', ReLU())
             self.fc6_list.append(fc6)
             self.fc6_relu_list.append(fc6_relu)
@@ -121,20 +124,28 @@ class BBoxHead(nn.Layer):
                 nn.Linear(
                     in_feat,
                     1 * self.num_classes,
-                    weight_attr=ParamAttr(initializer=Normal(
-                        mean=0.0, std=0.01)),
+                    weight_attr=ParamAttr(
+                        name='cls_score_w',
+                        initializer=Normal(
+                            mean=0.0, std=0.01)),
                     bias_attr=ParamAttr(
-                        learning_rate=2., regularizer=L2Decay(0.))))
+                        name='cls_score_b',
+                        learning_rate=2.,
+                        regularizer=L2Decay(0.))))
 
             bbox_delta = self.add_sublayer(
                 delta_name,
                 nn.Linear(
                     in_feat,
                     4 * self.delta_dim,
-                    weight_attr=ParamAttr(initializer=Normal(
-                        mean=0.0, std=0.001)),
+                    weight_attr=ParamAttr(
+                        name='bbox_pred_w',
+                        initializer=Normal(
+                            mean=0.0, std=0.001)),
                     bias_attr=ParamAttr(
-                        learning_rate=2., regularizer=L2Decay(0.))))
+                        name='bbox_pred_b',
+                        learning_rate=2.,
+                        regularizer=L2Decay(0.))))
             self.bbox_score_list.append(bbox_score)
             self.bbox_delta_list.append(bbox_delta)
 

@@ -52,9 +52,12 @@ class FPN(Layer):
                     out_channels=out_channel,
                     kernel_size=1,
                     weight_attr=ParamAttr(
+                        name=lateral_name + '_w',
                         initializer=XavierUniform(fan_out=in_c)),
                     bias_attr=ParamAttr(
-                        learning_rate=2., regularizer=L2Decay(0.))))
+                        name=lateral_name + '_b',
+                        learning_rate=2.,
+                        regularizer=L2Decay(0.))))
             self.lateral_convs.append(lateral)
 
             fpn_name = 'fpn_res{}_sum'.format(i + 2)
@@ -66,9 +69,12 @@ class FPN(Layer):
                     kernel_size=3,
                     padding=1,
                     weight_attr=ParamAttr(
+                        name=fpn_name + '_w',
                         initializer=XavierUniform(fan_out=fan)),
                     bias_attr=ParamAttr(
-                        learning_rate=2., regularizer=L2Decay(0.))))
+                        name=fpn_name + '_b',
+                        learning_rate=2.,
+                        regularizer=L2Decay(0.))))
             self.fpn_convs.append(fpn_conv)
 
         self.min_level = min_level

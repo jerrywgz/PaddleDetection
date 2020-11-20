@@ -67,6 +67,8 @@ class MaskRCNN(BaseArch):
         body_feats = self.backbone(self.inputs)
         spatial_scale = None
 
+        self.res3 = body_feats[1]
+        self.res5 = body_feats[3]
         # Neck
         if self.neck is not None:
             body_feats, spatial_scale = self.neck(body_feats)
@@ -105,9 +107,9 @@ class MaskRCNN(BaseArch):
                                                          bbox_targets)
 
         # Mask Head 
-        self.mask_head_out = self.mask_head(self.inputs, body_feats,
-                                            self.bboxes, bbox_feat,
-                                            rois_has_mask_int32, spatial_scale)
+        self.mask_fcn_logits_weight, self.rois_feat, self.mask_feat, self.mask_head_out = self.mask_head(
+            self.inputs, body_feats, self.bboxes, bbox_feat,
+            rois_has_mask_int32, spatial_scale)
 
     def get_loss(self, ):
         loss = {}
@@ -125,11 +127,20 @@ class MaskRCNN(BaseArch):
 
         # Mask loss
         mask_targets = self.mask.get_targets()
-        loss_mask = self.mask_head.get_loss(self.mask_head_out, mask_targets)
+        loss_mask, debug_list = self.mask_head.get_loss(self.mask_head_out,
+                                                        mask_targets)
         loss.update(loss_mask)
 
         total_loss = paddle.add_n(list(loss.values()))
         loss.update({'loss': total_loss})
+        loss.update({'debug_list': debug_list})
+        loss['debug_list'].update({'mask_feat': self.mask_feat})
+        loss['debug_list'].update({'mask_roi_feat': self.rois_feat})
+        loss['debug_list'].update({'res3': self.res3})
+        loss['debug_list'].update({'res5': self.res5})
+        loss['debug_list'].update({
+            'mask_fcn_logits_weight': self.mask_fcn_logits_weight
+        })
         return loss
 
     def get_pred(self, ):

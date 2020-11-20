@@ -203,6 +203,24 @@ def main():
         checkpoint.load_params(
             exe, train_prog, cfg.pretrain_weights, ignore_params=ignore_params)
 
+    check_list = [
+        'reshape2_22.tmp_0@GRAD',
+        'sigmoid_cross_entropy_with_logits_1.tmp_0@GRAD',
+        'conv2d_transpose_0.tmp_2@GRAD', 'lod_reset_0.tmp_0@GRAD',
+        'lod_reset_1.tmp_0@GRAD', 'res3d.add.output.5.tmp_1@GRAD',
+        'res5c.add.output.5.tmp_1@GRAD'
+    ]
+    # find var and set persistable
+    debug_var = []
+    debug_key = []
+    for k in check_list:
+        for var in train_prog.list_vars():
+            if var.name == k:
+                print('set var: ', var.name)
+                var.persistable = True
+                debug_key.append(k)
+                debug_var.append(var)
+
     train_reader = create_reader(
         cfg.TrainReader, (cfg.max_iters - start_iter) * devices_num,
         cfg,
@@ -245,8 +263,29 @@ def main():
         time_cost = np.mean(time_stat)
         eta_sec = (cfg.max_iters - it) * time_cost
         eta = str(datetime.timedelta(seconds=int(eta_sec)))
-        outs = exe.run(compiled_train_prog, fetch_list=train_values)
-        stats = {k: np.array(v).mean() for k, v in zip(train_keys, outs[:-1])}
+        outs = exe.run(compiled_train_prog,
+                       fetch_list=train_values + debug_var,
+                       return_numpy=False)
+        stats = {
+            k: np.array(v).mean()
+            for k, v in zip(train_keys, outs[:-(1 + len(debug_var))])
+        }
+        """
+        # print var after exe.run
+        all_vars = train_prog.global_block().vars
+        for k, v in all_vars.items():
+            if k in check_list:
+                print('find var in global block: ', k)
+                paddle_param = fluid.global_scope().find_var(k)
+                if paddle_param is None:
+                    print('lack var:', k)
+                    continue
+                paddle_param = paddle_param.get_tensor()
+                print(k, np.array(paddle_param))
+        """
+        for i in range(len(debug_var)):
+            out = outs[-len(debug_var) + i]
+            print(debug_key[i], np.array(out).mean())
 
         # use vdl-paddle to log loss
         if FLAGS.use_vdl:
@@ -271,12 +310,12 @@ def main():
             return
 
 
-        if (it > 0 and it % cfg.snapshot_iter == 0 or it == cfg.max_iters - 1) \
+        if (it > -1 and it % cfg.snapshot_iter == 0 or it == cfg.max_iters - 1) \
            and (not FLAGS.dist or trainer_id == 0):
             save_name = str(it) if it != cfg.max_iters - 1 else "model_final"
             if 'use_ema' in cfg and cfg['use_ema']:
                 exe.run(ema.apply_program)
-            checkpoint.save(exe, train_prog, os.path.join(save_dir, save_name))
+            #checkpoint.save(exe, train_prog, os.path.join(save_dir, save_name))
 
             if FLAGS.eval:
                 # evaluation

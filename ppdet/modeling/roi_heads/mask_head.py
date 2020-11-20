@@ -113,6 +113,7 @@ class MaskHead(object):
         head_feat = self._mask_conv_head(roi_feat, self.num_convs,
                                          self.norm_type)
         fan = class_num
+        print('head_feat: ', head_feat)
         mask_logits = fluid.layers.conv2d(
             input=head_feat,
             num_filters=class_num,
@@ -137,8 +138,11 @@ class MaskHead(object):
 
         mask_label = fluid.layers.cast(x=mask_int32, dtype='float32')
         mask_label.stop_gradient = True
+        print('mask_logits: ', mask_logits)
+        #mask_logits = fluid.layers.Print(mask_logits, print_phase='backward', summarize=100)
         loss_mask = fluid.layers.sigmoid_cross_entropy_with_logits(
             x=mask_logits, label=mask_label, ignore_index=-1, normalize=True)
+        print('loss_mask: ', loss_mask)
         loss_mask = fluid.layers.reduce_sum(loss_mask, name='loss_mask')
         return {'loss_mask': loss_mask}
 

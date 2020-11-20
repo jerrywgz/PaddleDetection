@@ -89,6 +89,8 @@ class MaskRCNN(object):
 
         # backbone
         body_feats = self.backbone(im)
+        print('res3_sum: ', body_feats['res3_sum'])
+        print('res5_sum: ', body_feats['res5_sum'])
 
         # cast features back to FP32
         if mixed_precision_enabled:
@@ -121,7 +123,7 @@ class MaskRCNN(object):
                 roi_feat = self.roi_extractor(last_feat, rois)
             else:
                 roi_feat = self.roi_extractor(body_feats, rois, spatial_scale)
-
+            print('roi_feat: ', roi_feat)
             loss = self.bbox_head.get_loss(roi_feat, labels_int32, *outs[2:])
             loss.update(rpn_loss)
 
@@ -138,7 +140,7 @@ class MaskRCNN(object):
             else:
                 feat = self.roi_extractor(
                     body_feats, mask_rois, spatial_scale, is_mask=True)
-
+            print('feat: ', feat)
             mask_loss = self.mask_head.get_loss(feat, mask_int32)
             loss.update(mask_loss)
 

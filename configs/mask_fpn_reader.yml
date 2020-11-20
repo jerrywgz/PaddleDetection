@@ -3,15 +3,15 @@ TrainReader:
     fields: ['image', 'im_info', 'im_id', 'gt_bbox', 'gt_class', 'is_crowd', 'gt_mask']
   dataset:
     !COCODataSet
-    image_dir: train2017
-    anno_path: annotations/instances_train2017.json
-    dataset_dir: dataset/coco
+    image_dir: val2017
+    anno_path: annotations/instances_val2017_debug_139.json
+    dataset_dir: /paddle/dataset/coco
   sample_transforms:
   - !DecodeImage
     to_rgb: true
-  - !RandomFlipImage
-    prob: 0.5
-    is_mask_flip: true
+  #- !RandomFlipImage
+  #  prob: 0.5
+  #  is_mask_flip: true
   - !NormalizeImage
     is_channel_first: false
     is_scale: true

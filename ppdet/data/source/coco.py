@@ -127,12 +127,13 @@ class COCODataSet(DetDataset):
                     catid = box['category_id']
                     gt_class[i][0] = catid2clsid[catid]
                     gt_bbox[i, :] = box['clean_bbox']
+                    #if box['iscrowd'] == 1:
+                    #    continue
                     is_crowd[i][0] = box['iscrowd']
                     # check RLE format 
-                    if box['iscrowd'] == 1:
+                    if 'segmentation' in box and box['iscrowd'] == 1:
                         gt_poly[i] = [[0.0, 0.0], ]
-                        continue
-                    if 'segmentation' in box:
+                    elif 'segmentation' in box:
                         gt_poly[i] = box['segmentation']
 
                 if not any(gt_poly):

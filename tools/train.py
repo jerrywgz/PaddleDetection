@@ -121,12 +121,15 @@ def run(FLAGS, cfg, place):
     train_loader, step_per_epoch = create('TrainReader')(
         dataset, cfg['worker_num'], place)
 
+    if ParallelEnv().local_rank == 0:
+        print('step_per_epoch: ', step_per_epoch)
     # Model
     main_arch = cfg.architecture
     model = create(cfg.architecture)
 
     # Optimizer
-    lr = create('LearningRate')(step_per_epoch / int(ParallelEnv().nranks))
+    #lr = create('LearningRate')(step_per_epoch / int(ParallelEnv().nranks))
+    lr = create('LearningRate')(step_per_epoch)
     optimizer = create('OptimizerBuilder')(lr, model.parameters())
 
     # Init Model & Optimzer   
@@ -172,7 +175,6 @@ def run(FLAGS, cfg, place):
                 model.apply_collective_grads()
             else:
                 loss.backward()
-            optimizer.minimize(loss)
             optimizer.step()
             curr_lr = optimizer.get_lr()
             lr.step()

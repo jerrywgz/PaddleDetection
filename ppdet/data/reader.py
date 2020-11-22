@@ -8,9 +8,9 @@ if sys.version_info >= (3, 0):
 else:
     import Queue
 import numpy as np
-from paddle.io import DataLoader
+from paddle.io import DataLoader, DistributedBatchSampler
 from ppdet.core.workspace import register, serializable, create
-from .sampler import DistributedBatchSampler
+#from .sampler import DistributedBatchSampler
 from .transform import operators
 from .transform import batch_operators
 
@@ -135,7 +135,7 @@ class TrainReader(BaseDataLoader):
                  batch_transforms=None,
                  batch_size=1,
                  shuffle=True,
-                 drop_last=False,
+                 drop_last=True,
                  drop_empty=True,
                  num_classes=81,
                  with_background=True):

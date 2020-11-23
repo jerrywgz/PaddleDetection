@@ -29,6 +29,7 @@
 #include "include/preprocess_op.h"
 #include "include/config_parser.h"
 
+using namespace paddle_infer;
 
 namespace PaddleDetection {
 // Object Detection Result
@@ -61,7 +62,7 @@ class ObjectDetector {
                           const int gpu_id=0) {
     config_.load_config(model_dir);
     threshold_ = config_.draw_threshold_;
-    preprocessor_.Init(config_.preprocess_info_, config_.arch_);
+    preprocessor_.Init(config_.preprocess_info_);
     LoadModel(model_dir, use_gpu, config_.min_subgraph_size_, 1, run_mode, gpu_id);
   }
 
@@ -95,7 +96,7 @@ class ObjectDetector {
       const cv::Mat& raw_mat,
       std::vector<ObjectResult>* result);
 
-  std::unique_ptr<paddle::PaddlePredictor> predictor_;
+  std::shared_ptr<Predictor> predictor_;
   Preprocessor preprocessor_;
   ImageBlob inputs_;
   std::vector<float> output_data_;

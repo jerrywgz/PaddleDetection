@@ -202,8 +202,8 @@ int main(int argc, char** argv) {
     std::cout << "run_mode should be 'fluid', 'trt_fp32' or 'trt_fp16'.";
     return -1;
   }
-
   // Load model and create a object detector
+  
   PaddleDetection::ObjectDetector det(FLAGS_model_dir, FLAGS_use_gpu,
     FLAGS_run_mode, FLAGS_gpu_id);
   // Do inference on input video or image

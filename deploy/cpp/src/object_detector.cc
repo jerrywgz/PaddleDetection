@@ -33,7 +33,8 @@ void ObjectDetector::LoadModel(const std::string& model_dir,
   std::string params_file = model_dir + OS_PATH_SEP + "model.pdiparams";
   config.SetModel(prog_file, params_file);
   if (use_gpu) {
-    config.EnableUseGpu(100, gpu_id);
+    config.EnableUseGpu(1000, gpu_id);
+    config.SwitchIrOptim(true);
     if (run_mode != "fluid") {
       auto precision = paddle_infer::Config::Precision::kFloat32;
       if (run_mode == "trt_fp16") {
@@ -58,7 +59,6 @@ void ObjectDetector::LoadModel(const std::string& model_dir,
     config.DisableGpu();
   }
   config.SwitchUseFeedFetchOps(false);
-  config.SwitchSpecifyInputNames(true);
   config.DisableGlogInfo();
   // Memory optimization
   config.EnableMemoryOptim();
@@ -171,8 +171,8 @@ void ObjectDetector::Predict(const cv::Mat& im,
   for (const auto& tensor_name : input_names) {
     auto in_tensor = predictor_->GetInputHandle(tensor_name);
     if (tensor_name == "image") {
-      int rh = im.rows;
-      int rw = im.cols;
+      int rh = inputs_.input_shape_[0];
+      int rw = inputs_.input_shape_[1];
       in_tensor->Reshape({1, 3, rh, rw});
       in_tensor->CopyFromCpu(inputs_.im_data_.data());
     } else if (tensor_name == "im_shape") {

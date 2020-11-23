@@ -127,6 +127,5 @@ def dump_infer_config(config, path, image_shape):
             infer_cfg['arch'], image_shape)
 
     yaml.dump(infer_cfg, open(path, 'w'))
-    logger.info("Export inference config file to {}".format(
-        os.path.join(path, 'infer_cfg.yml')))
+    logger.info("Export inference config file to {}".format(os.path.join(path)))
     return image_shape

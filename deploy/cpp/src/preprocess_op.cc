@@ -25,6 +25,10 @@ void InitInfo::Run(cv::Mat* im, ImageBlob* data) {
       static_cast<int>(im->cols)
   };
   data->scale_factor_ = {1., 1.};
+  data->input_shape_ = {
+      static_cast<int>(im->rows),
+      static_cast<int>(im->cols)
+  };
 }
 
 void Normalize::Run(cv::Mat* im, ImageBlob* data) {
@@ -65,8 +69,8 @@ void Resize::Run(cv::Mat* im, ImageBlob* data) {
     static_cast<int>(im->cols),
   };
   data->scale_factor_ = {
-    resize_scale.first,
     resize_scale.second,
+    resize_scale.first,
   };
 
   if (keep_ratio_) {
@@ -82,6 +86,10 @@ void Resize::Run(cv::Mat* im, ImageBlob* data) {
       cv::BORDER_CONSTANT,
       cv::Scalar(0));
   }
+  data->input_shape_ = {
+    static_cast<int>(im->rows),
+    static_cast<int>(im->cols),
+  };
 }
 
 std::pair<float, float> Resize::GenerateScale(const cv::Mat& im) {
@@ -127,12 +135,17 @@ void PadStride::Run(cv::Mat* im, ImageBlob* data) {
     nw - rw,
     cv::BORDER_CONSTANT,
     cv::Scalar(0));
+  data->input_shape_ = {
+    static_cast<int>(im->rows),
+    static_cast<int>(im->cols),
+  };
+
 }
 
 
 // Preprocessor op running order
 const std::vector<std::string> Preprocessor::RUN_ORDER = {
-  "InitInfo", "Resize", "Normalize", "PadStride", "Permute"
+  "InitInfo", "ResizeOp", "NormalizeImageOp", "PadStrideOp", "PermuteOp"
 };
 
 void Preprocessor::Run(cv::Mat* im, ImageBlob* data) {

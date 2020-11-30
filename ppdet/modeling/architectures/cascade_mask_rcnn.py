@@ -112,7 +112,6 @@ class CascadeMaskRCNN(object):
         if mixed_precision_enabled:
             body_feats = OrderedDict((k, fluid.layers.cast(v, 'float32'))
                                      for k, v in body_feats.items())
-
         # FPN
         if self.fpn is not None:
             body_feats, spatial_scale = self.fpn.get_output(body_feats)
@@ -146,20 +145,23 @@ class CascadeMaskRCNN(object):
                     curr_stage=i - 1, )
             else:
                 refined_bbox = rpn_rois
-
+            if i == 1:
+                print('max_overlap: ', max_overlap)
             if mode == 'train':
                 outs = self.bbox_assigner(
                     input_rois=refined_bbox,
                     feed_vars=feed_vars,
                     curr_stage=i,
                     max_overlap=max_overlap)
-
+                if i == 1:
+                    print('roi after gpl: ', outs[0])
                 proposals = outs[0]
                 max_overlap = outs[-1]
                 rcnn_target_list.append(outs[:-1])
             else:
                 proposals = refined_bbox
             proposal_list.append(proposals)
+            print('proposal_list: ', proposal_list)
 
             # extract roi features
             roi_feat = self.roi_extractor(body_feats, proposals, spatial_scale)
@@ -171,6 +173,7 @@ class CascadeMaskRCNN(object):
                 wb_scalar=1.0 / self.cascade_rcnn_loss_weight[i],
                 name='_' + str(i + 1) if i > 0 else '')
             rcnn_pred_list.append((cls_score, bbox_pred))
+            print('i: {}, rcnn_pred_list: {}'.format(i, rcnn_pred_list))
 
         # get mask rois
         rois = proposal_list[2]
@@ -363,6 +366,7 @@ class CascadeMaskRCNN(object):
         # only use fg box delta to decode box
         rcnn_loc_delta_s = fluid.layers.slice(
             rcnn_loc_delta_r, axes=[1], starts=[1], ends=[2])
+        print('refine: proposals: {}, delta: {}'.format(proposals, rcnn_loc_delta_s))
         refined_bbox = fluid.layers.box_coder(
             prior_box=proposals,
             prior_box_var=self.cascade_bbox_reg_weights[curr_stage],
@@ -370,6 +374,7 @@ class CascadeMaskRCNN(object):
             code_type='decode_center_size',
             box_normalized=False,
             axis=1, )
+        print('box_coder: ', refined_bbox)
         refined_bbox = fluid.layers.reshape(refined_bbox, shape=[-1, 4])
 
         return refined_bbox

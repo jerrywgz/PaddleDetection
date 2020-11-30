@@ -129,21 +129,33 @@ class CascadeBBoxHead(object):
                 logits=rcnn_pred[0],
                 label=labels_int64,
                 numeric_stable_mode=True, )
+            print('softmax loss: ', loss_cls)
+            fluid.layers.Print(loss_cls)
             loss_cls = fluid.layers.reduce_mean(
-                loss_cls, name='loss_cls_' + str(i)) * rcnn_loss_weight_list[i]
+                loss_cls, name='loss_cls_' + str(i))
+            print('loss_cls: ', loss_cls)
+            loss_cls = loss_cls * rcnn_loss_weight_list[i]
 
+            print('rcnn_loss_weight: ', rcnn_loss_weight_list[i])
             loss_bbox = self.bbox_loss(
                 x=rcnn_pred[1],
                 y=rcnn_target[2],
                 inside_weight=rcnn_target[3],
                 outside_weight=rcnn_target[4])
+            print('smooth l1: ', loss_bbox)
+            fluid.layers.Print(loss_bbox)
+            print('labels_int64: ', labels_int64)
+            print('bbox_targets: ', rcnn_target[2])
+            print('inside_weight: ', rcnn_target[3])
             loss_bbox = fluid.layers.reduce_mean(
                 loss_bbox,
-                name='loss_bbox_' + str(i)) * rcnn_loss_weight_list[i]
+                name='loss_bbox_' + str(i))
+            print('loss_bbox: ', loss_bbox)
+
+            loss_bbox = loss_bbox * rcnn_loss_weight_list[i]
 
             loss_dict['loss_cls_%d' % i] = loss_cls
             loss_dict['loss_loc_%d' % i] = loss_bbox
-
         return loss_dict
 
     def get_prediction(self,

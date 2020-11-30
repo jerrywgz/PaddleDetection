@@ -61,6 +61,22 @@ class CascadeBBoxAssigner(object):
             2. / self.bbox_reg_weights[curr_stage],
             2. / self.bbox_reg_weights[curr_stage],
         ]
+        if curr_stage == 1:
+            print('==========DEBUG TARGET===========')
+            print('input_rois: ', input_rois)
+            print('gt_classes: ', feed_vars['gt_class'])
+            print('is_crowd: ', feed_vars['is_crowd'])
+            print('gt_boxes: ', feed_vars['gt_bbox'])
+            print('im_info: ', feed_vars['im_info'])
+            print('batch_size_per_im: ', self.batch_size_per_im)
+            print('fg_thresh: ', self.fg_thresh[1])
+            print('bg_thresh_hi: ', self.bg_thresh_hi[1])
+            print('bg_thresh_lo: ', self.bg_thresh_lo[1])
+            print('bbox_reg_weights: ', curr_bbox_reg_w)
+            print('class_nums: ', self.class_nums, self.class_aware)
+            print('is_cls_agnostic: ', not self.class_aware)
+            print('max_overlap: ', max_overlap)
+            print('=================================')
         outs = fluid.layers.generate_proposal_labels(
             rpn_rois=input_rois,
             gt_classes=feed_vars['gt_class'],

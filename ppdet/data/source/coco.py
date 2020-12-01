@@ -132,7 +132,9 @@ class COCODataSet(DetDataset):
                     if 'segmentation' in box and box['iscrowd'] == 1:
                         gt_poly[i] = [[0.0, 0.0], ]
                     elif 'segmentation' in box:
-                        gt_poly[i] = box['segmentation']
+                        gt_poly[i] = [
+                            p for p in box['segmentation'] if len(p) >= 6
+                        ]
 
                 if not any(gt_poly):
                     continue

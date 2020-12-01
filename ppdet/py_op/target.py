@@ -341,13 +341,13 @@ def generate_mask_target(im_info, gt_classes, is_crowd, gt_segms, rois,
                     if (x == -1 and y == -1):
                         continue
                     elif (x >= 0 and y >= 0):
-                        new_poly.append([x, y])  # array, one poly 
+                        new_poly.extend([x, y])  # array, one poly 
                 if len(new_poly) > 0:
                     gt_segs.append(new_poly)
             new_gt_polys.append(gt_segs)
         im_scale = im_info[k][2]
         boxes = rois[st_num:end_num] / im_scale
-
+        #new_gt_polys = np.array(new_gt_polys, dtype=np.float32)
         bbox_fg, bbox_has_mask, masks = sample_mask(
             boxes, new_gt_polys, labels_int32[st_num:end_num], gt_classes[k],
             is_crowd[k], num_classes, resolution)
@@ -384,7 +384,7 @@ def sample_mask(boxes, gt_polys, label_int32, gt_classes, is_crowd, num_classes,
         masks_fg = np.zeros((fg_inds.shape[0], resolution**2), dtype=np.int32)
         bbox_fg = boxes[fg_inds]
 
-        iou = bbox_overlaps_mask(bbox_fg, boxes_from_polys)
+        iou = bbox_overlaps(bbox_fg, boxes_from_polys)
         fg_polys_inds = np.argmax(iou, axis=1)
 
         for i in range(bbox_fg.shape[0]):

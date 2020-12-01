@@ -153,11 +153,15 @@ def run(FLAGS, cfg, place):
     start_time = time.time()
     end_time = time.time()
     # Run Train
+    import paddle.fluid.profiler as profiler
     start_epoch = optimizer.state_dict()['LR_Scheduler']['last_epoch']
     for epoch_id in range(int(cfg.epoch)):
         cur_eid = epoch_id + start_epoch
         train_loader.dataset.epoch = cur_eid
         for iter_id, data in enumerate(train_loader):
+            if iter_id == 500: profiler.start_profiler("All")
+            if iter_id == 1000: profiler.stop_profiler("total", "/tmp/profile")
+
             start_time = end_time
             end_time = time.time()
             time_stat.append(end_time - start_time)

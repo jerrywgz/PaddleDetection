@@ -88,6 +88,8 @@ class FasterRCNN(object):
 
         body_feats = self.backbone(im)
         body_feat_names = list(body_feats.keys())
+        import paddle
+        fluid.layers.Print(paddle.mean(body_feats['res4_sum']))
 
         # cast features back to FP32
         if mixed_precision_enabled:

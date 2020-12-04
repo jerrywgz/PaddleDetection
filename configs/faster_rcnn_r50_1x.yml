@@ -1,10 +1,10 @@
 architecture: FasterRCNN
 use_gpu: true
-max_iters: 180000
-log_iter: 20
+max_iters: 5 #180000
+log_iter: 1 #20
 save_dir: output
 snapshot_iter: 10000
-pretrain_weights: https://paddle-imagenet-models-name.bj.bcebos.com/ResNet50_cos_pretrained.tar
+pretrain_weights: https://paddlemodels.bj.bcebos.com/object_detection/faster_rcnn_r50_1x.tar #https://paddle-imagenet-models-name.bj.bcebos.com/ResNet50_cos_pretrained.tar
 metric: COCO
 weights: output/faster_rcnn_r50_1x/model_final
 num_classes: 81
@@ -17,14 +17,14 @@ FasterRCNN:
   bbox_assigner: BBoxAssigner
 
 ResNet:
-  norm_type: affine_channel
+  norm_type: bn #affine_channel
   depth: 50
   feature_maps: 4
   freeze_at: 2
 
 ResNetC5:
   depth: 50
-  norm_type: affine_channel
+  norm_type: bn #affine_channel
 
 RPNHead:
   anchor_generator:
@@ -38,7 +38,7 @@ RPNHead:
     rpn_negative_overlap: 0.3
     rpn_positive_overlap: 0.7
     rpn_straddle_thresh: 0.0
-    use_random: true
+    use_random: false
   train_proposal:
     min_size: 0.0
     nms_thresh: 0.7
@@ -62,6 +62,7 @@ BBoxAssigner:
   bg_thresh_lo: 0.0
   fg_fraction: 0.25
   fg_thresh: 0.5
+  shuffle_before_sample: False
 
 BBoxHead:
   head: ResNetC5

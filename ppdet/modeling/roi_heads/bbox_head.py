@@ -273,6 +273,12 @@ class BBoxHead(object):
 
         labels_int64 = fluid.layers.cast(x=labels_int32, dtype='int64')
         labels_int64.stop_gradient = True
+        print('cls_score: ', cls_score)
+        print('bbox_pred: ', bbox_pred)
+        print('labels_int64: ', labels_int64)
+        print('bbox_targets: ', bbox_targets)
+        print('bbox_inside_weights: ', bbox_inside_weights)
+        print('bbox_outside_weights: ', bbox_outside_weights)
         loss_cls = fluid.layers.softmax_with_cross_entropy(
             logits=cls_score, label=labels_int64, numeric_stable_mode=True)
         loss_cls = fluid.layers.reduce_mean(loss_cls)

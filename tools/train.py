@@ -203,6 +203,26 @@ def main():
         checkpoint.load_params(
             exe, train_prog, cfg.pretrain_weights, ignore_params=ignore_params)
 
+    check_list = [
+        'cls_score.tmp_1',
+        'bbox_pred.tmp_1',
+        'cls_score.tmp_1@GRAD',
+        'bbox_pred.tmp_1@GRAD',
+        'cast_3.tmp_0',
+        'generate_proposal_labels_0.tmp_2',
+        'generate_proposal_labels_0.tmp_3',
+        'generate_proposal_labels_0.tmp_4',
+    ]
+    # find var and set persistable
+    debug_var = []
+    debug_key = []
+    for k in check_list:
+        for var in train_prog.list_vars():
+            if var.name == k:
+                print('set var: ', var.name)
+                var.persistable = True
+                debug_key.append(k)
+                debug_var.append(var)
     train_reader = create_reader(
         cfg.TrainReader, (cfg.max_iters - start_iter) * devices_num,
         cfg,
@@ -245,9 +265,17 @@ def main():
         time_cost = np.mean(time_stat)
         eta_sec = (cfg.max_iters - it) * time_cost
         eta = str(datetime.timedelta(seconds=int(eta_sec)))
-        outs = exe.run(compiled_train_prog, fetch_list=train_values)
-        stats = {k: np.array(v).mean() for k, v in zip(train_keys, outs[:-1])}
+        outs = exe.run(compiled_train_prog,
+                       fetch_list=train_values + debug_var,
+                       return_numpy=False)
+        stats = {
+            k: np.array(v).mean()
+            for k, v in zip(train_keys, outs[:-(1 + len(debug_var))])
+        }
 
+        for i in range(len(debug_var)):
+            out = outs[-len(debug_var) + i]
+            print(debug_key[i], np.array(out).flatten()[:100])
         # use vdl-paddle to log loss
         if FLAGS.use_vdl:
             if it % cfg.log_iter == 0:

@@ -60,7 +60,7 @@ class Anchor(object):
             anchor_box=anchors,
             gt_boxes=inputs['gt_bbox'],
             is_crowd=inputs['is_crowd'],
-            im_info=inputs['im_info'])
+            im_shape=inputs['im_shape'])
         outs = {
             'rpn_score_pred': score_pred,
             'rpn_score_target': score_tgt,
@@ -93,11 +93,7 @@ class Proposal(object):
         self.proposal_target_generator = proposal_target_generator
 
     def generate_proposal(self, inputs, rpn_head_out, anchor_out):
-        # TODO: delete im_info 
-        try:
-            im_shape = inputs['im_info']
-        except:
-            im_shape = inputs['im_shape']
+        im_shape = inputs['im_shape']
         rpn_rois_list = []
         rpn_prob_list = []
         rpn_rois_num_list = []
@@ -135,7 +131,6 @@ class Proposal(object):
             gt_classes=inputs['gt_class'],
             is_crowd=inputs['is_crowd'],
             gt_boxes=inputs['gt_bbox'],
-            im_info=inputs['im_info'],
             stage=stage)
         rois = outs[0]
         rois_num = outs[-1]

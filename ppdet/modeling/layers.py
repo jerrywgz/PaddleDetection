@@ -75,13 +75,13 @@ class AnchorTargetGeneratorRPN(object):
         self.use_random = use_random
 
     def __call__(self, cls_logits, bbox_pred, anchor_box, gt_boxes, is_crowd,
-                 im_info):
+                 im_shape):
         anchor_box = anchor_box.numpy()
         gt_boxes = gt_boxes.numpy()
         is_crowd = is_crowd.numpy()
-        im_info = im_info.numpy()
+        im_shape = im_shape.numpy()
         loc_indexes, score_indexes, tgt_labels, tgt_bboxes, bbox_inside_weights = generate_rpn_anchor_target(
-            anchor_box, gt_boxes, is_crowd, im_info, self.straddle_thresh,
+            anchor_box, gt_boxes, is_crowd, im_shape, self.straddle_thresh,
             self.batch_size_per_im, self.positive_overlap,
             self.negative_overlap, self.fg_fraction, self.use_random)
 
@@ -134,34 +134,18 @@ class ProposalGenerator(object):
                  mode='train'):
         pre_nms_top_n = self.train_pre_nms_top_n if mode == 'train' else self.infer_pre_nms_top_n
         post_nms_top_n = self.train_post_nms_top_n if mode == 'train' else self.infer_post_nms_top_n
-        # TODO delete im_info
-        if im_shape.shape[1] > 2:
-            import paddle.fluid as fluid
-            rpn_rois, rpn_rois_prob, rpn_rois_num = fluid.layers.generate_proposals(
-                scores,
-                bbox_deltas,
-                im_shape,
-                anchors,
-                variances,
-                pre_nms_top_n=pre_nms_top_n,
-                post_nms_top_n=post_nms_top_n,
-                nms_thresh=self.nms_thresh,
-                min_size=self.min_size,
-                eta=self.eta,
-                return_rois_num=True)
-        else:
-            rpn_rois, rpn_rois_prob, rpn_rois_num = ops.generate_proposals(
-                scores,
-                bbox_deltas,
-                im_shape,
-                anchors,
-                variances,
-                pre_nms_top_n=pre_nms_top_n,
-                post_nms_top_n=post_nms_top_n,
-                nms_thresh=self.nms_thresh,
-                min_size=self.min_size,
-                eta=self.eta,
-                return_rois_num=True)
+        rpn_rois, rpn_rois_prob, rpn_rois_num = ops.generate_proposals(
+            scores,
+            bbox_deltas,
+            im_shape,
+            anchors,
+            variances,
+            pre_nms_top_n=pre_nms_top_n,
+            post_nms_top_n=post_nms_top_n,
+            nms_thresh=self.nms_thresh,
+            min_size=self.min_size,
+            eta=self.eta,
+            return_rois_num=True)
         return rpn_rois, rpn_rois_prob, rpn_rois_num, post_nms_top_n
 
 
@@ -199,16 +183,14 @@ class ProposalTargetGenerator(object):
                  gt_classes,
                  is_crowd,
                  gt_boxes,
-                 im_info,
                  stage=0):
         rpn_rois = rpn_rois.numpy()
         rpn_rois_num = rpn_rois_num.numpy()
         gt_classes = gt_classes.numpy()
         gt_boxes = gt_boxes.numpy()
         is_crowd = is_crowd.numpy()
-        im_info = im_info.numpy()
         outs = generate_proposal_target(
-            rpn_rois, rpn_rois_num, gt_classes, is_crowd, gt_boxes, im_info,
+            rpn_rois, rpn_rois_num, gt_classes, is_crowd, gt_boxes,
             self.batch_size_per_im, self.fg_fraction, self.fg_thresh[stage],
             self.bg_thresh_hi[stage], self.bg_thresh_lo[stage],
             self.bbox_reg_weights[stage], self.num_classes, self.use_random,
@@ -229,18 +211,17 @@ class MaskTargetGenerator(object):
         self.num_classes = num_classes
         self.mask_resolution = mask_resolution
 
-    def __call__(self, im_info, gt_classes, is_crowd, gt_segms, rois, rois_num,
+    def __call__(self, gt_classes, is_crowd, gt_segms, rois, rois_num,
                  labels_int32):
-        im_info = im_info.numpy()
         gt_classes = gt_classes.numpy()
         is_crowd = is_crowd.numpy()
         gt_segms = gt_segms.numpy()
         rois = rois.numpy()
         rois_num = rois_num.numpy()
         labels_int32 = labels_int32.numpy()
-        outs = generate_mask_target(im_info, gt_classes, is_crowd, gt_segms,
-                                    rois, rois_num, labels_int32,
-                                    self.num_classes, self.mask_resolution)
+        outs = generate_mask_target(gt_classes, is_crowd, gt_segms, rois,
+                                    rois_num, labels_int32, self.num_classes,
+                                    self.mask_resolution)
 
         outs = [to_tensor(v) for v in outs]
         for v in outs:

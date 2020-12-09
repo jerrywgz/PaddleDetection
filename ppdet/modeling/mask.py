@@ -20,7 +20,6 @@ class Mask(object):
         labels_int32 = targets['labels_int32']
         proposals, proposals_num = rois
         mask_rois, mask_rois_num, self.rois_has_mask_int32, self.mask_int32 = self.mask_target_generator(
-            im_info=inputs['im_info'],
             gt_classes=inputs['gt_class'],
             is_crowd=inputs['is_crowd'],
             gt_segms=inputs['gt_poly'],

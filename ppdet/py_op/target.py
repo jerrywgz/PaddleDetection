@@ -10,7 +10,7 @@ from .mask import *
 def generate_rpn_anchor_target(anchors,
                                gt_boxes,
                                is_crowd,
-                               im_info,
+                               im_shape,
                                rpn_straddle_thresh,
                                rpn_batch_size_per_im,
                                rpn_positive_overlap,
@@ -30,9 +30,7 @@ def generate_rpn_anchor_target(anchors,
     for i in range(batch_size):
 
         # TODO: move anchor filter into anchor generator 
-        im_height = im_info[i][0]
-        im_width = im_info[i][1]
-        im_scale = im_info[i][2]
+        im_height, im_width = im_shape[i]
         if rpn_straddle_thresh >= 0:
             anchor_inds = np.where((anchors[:, 0] >= -rpn_straddle_thresh) & (
                 anchors[:, 1] >= -rpn_straddle_thresh) & (
@@ -43,7 +41,7 @@ def generate_rpn_anchor_target(anchors,
             anchor_inds = np.arange(anchors.shape[0])
             anchor = anchors
 
-        gt_bbox = gt_boxes[i] * im_scale
+        gt_bbox = gt_boxes[i]
         is_crowd_slice = is_crowd[i]
         not_crowd_inds = np.where(is_crowd_slice == 0)[0]
         gt_bbox = gt_bbox[not_crowd_inds]
@@ -154,7 +152,6 @@ def generate_proposal_target(rpn_rois,
                              gt_classes,
                              is_crowd,
                              gt_boxes,
-                             im_info,
                              batch_size_per_im,
                              fg_fraction,
                              fg_thresh,
@@ -179,8 +176,6 @@ def generate_proposal_target(rpn_rois,
         end_num += length
 
         rpn_roi = rpn_rois[st_num:end_num]
-        im_scale = im_info[im_i][2]
-        rpn_roi = rpn_roi / im_scale
         gt_bbox = gt_boxes[im_i]
 
         if is_cascade_rcnn:
@@ -219,11 +214,10 @@ def generate_proposal_target(rpn_rois,
         bbox_outside_weights = np.array(
             bbox_inside_weights > 0, dtype=bbox_inside_weights.dtype)
 
-        roi = sampled_boxes * im_scale
         st_num += length
 
-        rois.append(roi)
-        new_rois_num.append(roi.shape[0])
+        rois.append(sampled_boxes)
+        new_rois_num.append(sampled_boxes.shape[0])
         tgt_labels.append(sampled_labels)
         tgt_deltas.append(sampled_deltas)
         rois_inside_weights.append(bbox_inside_weights)
@@ -316,8 +310,8 @@ def sample_bbox(roi_gt_bbox_iou,
 
 
 @jit
-def generate_mask_target(im_info, gt_classes, is_crowd, gt_segms, rois,
-                         rois_num, labels_int32, num_classes, resolution):
+def generate_mask_target(gt_classes, is_crowd, gt_segms, rois, rois_num,
+                         labels_int32, num_classes, resolution):
     mask_rois = []
     mask_rois_num = []
     rois_has_mask_int32 = []
@@ -345,8 +339,7 @@ def generate_mask_target(im_info, gt_classes, is_crowd, gt_segms, rois,
                 if len(new_poly) > 0:
                     gt_segs.append(new_poly)
             new_gt_polys.append(gt_segs)
-        im_scale = im_info[k][2]
-        boxes = rois[st_num:end_num] / im_scale
+        boxes = rois[st_num:end_num]
 
         bbox_fg, bbox_has_mask, masks = sample_mask(
             boxes, new_gt_polys, labels_int32[st_num:end_num], gt_classes[k],
@@ -354,7 +347,7 @@ def generate_mask_target(im_info, gt_classes, is_crowd, gt_segms, rois,
 
         st_num += length
 
-        mask_rois.append(bbox_fg * im_scale)
+        mask_rois.append(bbox_fg)
         mask_rois_num.append(len(bbox_fg))
         rois_has_mask_int32.append(bbox_has_mask)
         mask_int32.append(masks)

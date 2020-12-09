@@ -60,6 +60,8 @@ def generate_rpn_anchor_target(anchors,
 
         # Step3: make output  
         loc_inds = np.hstack([fg_fake_inds, fg_inds])
+        if loc_inds.shape[0] == 0:
+            print('gt_boxes: ', gt_boxes[i], gt_bbox, fg_fake_inds, fg_inds)
         cls_inds = np.hstack([fg_inds, bg_inds])
 
         sampled_labels = labels[cls_inds]
@@ -78,8 +80,8 @@ def generate_rpn_anchor_target(anchors,
         tgt_deltas.append(sampled_deltas)
         anchor_inside_weights.append(anchor_inside_weight)
 
-    loc_indexes = np.concatenate(loc_indexes)
-    cls_indexes = np.concatenate(cls_indexes)
+    loc_indexes = np.concatenate(loc_indexes).astype('int32')
+    cls_indexes = np.concatenate(cls_indexes).astype('int32')
     tgt_labels = np.concatenate(tgt_labels).astype('float32')
     tgt_deltas = np.vstack(tgt_deltas).astype('float32')
     anchor_inside_weights = np.vstack(anchor_inside_weights)
@@ -253,7 +255,7 @@ def label_bbox(boxes,
 
     # every roi's gt box's index  
     roi_gt_bbox_inds = np.zeros((boxes.shape[0]), dtype=np.int32)
-    roi_gt_bbox_iou = np.zeros((boxes.shape[0], class_nums))
+    roi_gt_bbox_iou = np.zeros((boxes.shape[0], class_nums), dtype=np.float32)
 
     iou_argmax = iou.argmax(axis=1)
     iou_max = iou.max(axis=1)

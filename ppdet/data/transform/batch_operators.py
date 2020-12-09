@@ -105,9 +105,9 @@ class PadBatch(BaseOperator):
                         for p_p in poly:
                             point_num.append(int(len(p_p) / 2))
             gt_num_max = max(gt_num)
-            gt_box_data = np.zeros([gt_num_max, 4])
-            gt_class_data = np.zeros([gt_num_max])
-            is_crowd_data = np.ones([gt_num_max])
+            gt_box_data = np.zeros([gt_num_max, 4]).astype('float32')
+            gt_class_data = np.zeros([gt_num_max]).astype('int32')
+            is_crowd_data = np.ones([gt_num_max]).astype('int32')
 
             if pad_mask:
                 poly_num_max = max(poly_num)

@@ -147,19 +147,39 @@ def run(FLAGS, cfg, place):
     # Run Infer 
     for iter_id, data in enumerate(test_loader):
         # forward
+        fields = cfg.TestReader['inputs_def']['fields']
         model.eval()
-        outs = model(data, cfg.TestReader['inputs_def']['fields'], 'infer')
+        outs = model(
+            data=data,
+            input_def=cfg.TestReader['inputs_def']['fields'],
+            mode='infer')
+        for key, value in outs.items():
+            outs[key] = value.numpy()
+        im_shape = data[fields.index('im_shape')].numpy()
+        scale_factor = data[fields.index('scale_factor')].numpy()
+        im_ids = data[fields.index('im_id')].numpy()
+        im_info = [im_shape, scale_factor, im_ids]
 
-        batch_res = get_infer_results([outs], outs.keys(), clsid2catid)
+        if 'mask' in outs and 'bbox' in outs:
+            mask_resolution = model.mask_post_process.mask_resolution
+            from ppdet.py_op.post_process import mask_post_process
+            outs['mask'] = mask_post_process(outs, im_shape, scale_factor,
+                                             mask_resolution)
+
+        eval_type = []
+        if 'bbox' in outs:
+            eval_type.append('bbox')
+        if 'mask' in outs:
+            eval_type.append('mask')
+
+        batch_res = get_infer_results([outs], eval_type, clsid2catid, [im_info])
         logger.info('Infer iter {}'.format(iter_id))
         bbox_res = None
         mask_res = None
 
-        im_ids = outs['im_id']
         bbox_num = outs['bbox_num']
         start = 0
         for i, im_id in enumerate(im_ids):
-            im_id = im_ids[i]
             image_path = imid2path[int(im_id)]
             image = Image.open(image_path).convert('RGB')
             end = start + bbox_num[i]

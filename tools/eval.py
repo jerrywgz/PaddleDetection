@@ -75,14 +75,28 @@ def run(FLAGS, cfg, place):
     outs_res = []
     start_time = time.time()
     sample_num = 0
+    im_info = []
     for iter_id, data in enumerate(eval_loader):
         # forward
+        fields = cfg['EvalReader']['inputs_def']['fields']
         model.eval()
-        outs = model(data, cfg['EvalReader']['inputs_def']['fields'], 'infer')
-        outs_res.append(outs)
+        outs = model(data=data, input_def=fields, mode='infer')
+        for key, value in outs.items():
+            outs[key] = value.numpy()
+        im_shape = data[fields.index('im_shape')].numpy()
+        scale_factor = data[fields.index('scale_factor')].numpy()
+        im_id = data[fields.index('im_id')].numpy()
+        im_info.append([im_shape, scale_factor, im_id])
 
+        if 'mask' in outs and 'bbox' in outs:
+            mask_resolution = model.mask_post_process.mask_resolution
+            from ppdet.py_op.post_process import mask_post_process
+            outs['mask'] = mask_post_process(outs, im_shape, scale_factor,
+                                             mask_resolution)
+
+        outs_res.append(outs)
         # log
-        sample_num += len(data)
+        sample_num += im_shape.shape[0]
         if iter_id % 100 == 0:
             logger.info("Eval iter: {}".format(iter_id))
 
@@ -90,8 +104,10 @@ def run(FLAGS, cfg, place):
     logger.info('Total sample number: {}, averge FPS: {}'.format(
         sample_num, sample_num / cost_time))
 
-    eval_type = ['bbox']
-    if getattr(cfg, 'MaskHead', None):
+    eval_type = []
+    if 'bbox' in outs:
+        eval_type.append('bbox')
+    if 'mask' in outs:
         eval_type.append('mask')
     # Metric
     # TODO: support other metric
@@ -102,7 +118,7 @@ def run(FLAGS, cfg, place):
     clsid2catid, catid2name = get_category_info(anno_file, with_background,
                                                 use_default_label)
 
-    infer_res = get_infer_results(outs_res, eval_type, clsid2catid)
+    infer_res = get_infer_results(outs_res, eval_type, clsid2catid, im_info)
     eval_results(infer_res, cfg.metric, anno_file)
 
 

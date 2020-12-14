@@ -79,7 +79,7 @@ class ResizeOp(object):
         im_info['scale_factor'] = np.array(
             [im_scale_y, im_scale_x]).astype('float32')
         # padding im when image_shape fixed by infer_cfg.yml
-        if self.keep_ratio:
+        if self.keep_ratio and im_info['input_shape'][1] is not None:
             max_size = im_info['input_shape'][1]
             padding_im = np.zeros(
                 (max_size, max_size, im_channel), dtype=np.float32)
@@ -192,8 +192,8 @@ class PadStride(object):
             im_info (dict): info of processed image
         """
         coarsest_stride = self.coarsest_stride
-        if coarsest_stride == 0:
-            return im
+        if coarsest_stride <= 0:
+            return im, im_info
         im_c, im_h, im_w = im.shape
         pad_h = int(np.ceil(float(im_h) / coarsest_stride) * coarsest_stride)
         pad_w = int(np.ceil(float(im_w) / coarsest_stride) * coarsest_stride)

@@ -158,13 +158,17 @@ class MaskHead(Layer):
                      stage=0,
                      bbox_head_feat_func=None):
         bbox, bbox_num = bboxes
+
         if bbox.shape[0] == 0:
-            mask_head_out = bbox
+            mask_head_out = paddle.full([1, 6], -1)
         else:
             scale_factor_list = []
-            for idx, num in enumerate(bbox_num):
-                for n in range(num):
-                    scale_factor_list.append(scale_factor[idx, 0])
+            for idx in range(bbox_num.shape[0]):
+                num = bbox_num[idx]
+                scale = scale_factor[idx, 0]
+                ones = paddle.ones(num)
+                scale_expand = ones * scale
+                scale_factor_list.append(scale_expand)
             scale_factor_list = paddle.cast(
                 paddle.concat(scale_factor_list), 'float32')
             scale_factor_list = paddle.reshape(scale_factor_list, shape=[-1, 1])

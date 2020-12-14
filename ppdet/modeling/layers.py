@@ -160,11 +160,10 @@ class ProposalTargetGenerator(object):
                  fg_thresh=[.5, ],
                  bg_thresh_hi=[.5, ],
                  bg_thresh_lo=[0., ],
-                 bbox_reg_weights=[[0.1, 0.1, 0.2, 0.2]],
+                 bbox_reg_weights=[0.1, 0.1, 0.2, 0.2],
                  num_classes=81,
                  use_random=True,
-                 is_cls_agnostic=False,
-                 is_cascade_rcnn=False):
+                 is_cls_agnostic=False):
         super(ProposalTargetGenerator, self).__init__()
         self.batch_size_per_im = batch_size_per_im
         self.fg_fraction = fg_fraction
@@ -175,7 +174,6 @@ class ProposalTargetGenerator(object):
         self.num_classes = num_classes
         self.use_random = use_random
         self.is_cls_agnostic = is_cls_agnostic
-        self.is_cascade_rcnn = is_cascade_rcnn
 
     def __call__(self,
                  rpn_rois,
@@ -183,18 +181,24 @@ class ProposalTargetGenerator(object):
                  gt_classes,
                  is_crowd,
                  gt_boxes,
-                 stage=0):
+                 stage=0,
+                 max_overlap=None):
         rpn_rois = rpn_rois.numpy()
         rpn_rois_num = rpn_rois_num.numpy()
         gt_classes = gt_classes.numpy()
         gt_boxes = gt_boxes.numpy()
         is_crowd = is_crowd.numpy()
+        max_overlap = max_overlap if max_overlap is None else max_overlap.numpy(
+        )
+        reg_weights = [i / (stage + 1) for i in self.bbox_reg_weights]
+        is_cascade = True if stage > 0 else False
+        num_classes = 2 if is_cascade else self.num_classes
         outs = generate_proposal_target(
             rpn_rois, rpn_rois_num, gt_classes, is_crowd, gt_boxes,
             self.batch_size_per_im, self.fg_fraction, self.fg_thresh[stage],
-            self.bg_thresh_hi[stage], self.bg_thresh_lo[stage],
-            self.bbox_reg_weights[stage], self.num_classes, self.use_random,
-            self.is_cls_agnostic, self.is_cascade_rcnn)
+            self.bg_thresh_hi[stage], self.bg_thresh_lo[stage], reg_weights,
+            num_classes, self.use_random, self.is_cls_agnostic, is_cascade,
+            max_overlap)
         outs = [to_tensor(v) for v in outs]
         for v in outs:
             v.stop_gradient = True
@@ -240,7 +244,8 @@ class RCNNBox(object):
                  prior_box_var=[0.1, 0.1, 0.2, 0.2],
                  code_type="decode_center_size",
                  box_normalized=False,
-                 axis=1):
+                 axis=1,
+                 var_weight=1.):
         super(RCNNBox, self).__init__()
         self.num_classes = num_classes
         self.batch_size = batch_size
@@ -248,6 +253,7 @@ class RCNNBox(object):
         self.code_type = code_type
         self.box_normalized = box_normalized
         self.axis = axis
+        self.var_weight = var_weight
 
     def __call__(self, bbox_head_out, rois, im_shape, scale_factor):
         bbox_pred, cls_prob = bbox_head_out
@@ -268,9 +274,10 @@ class RCNNBox(object):
         origin_shape = paddle.concat(origin_shape_list)
 
         bbox = roi / scale
+        prior_box_var = [i / self.var_weight for i in self.prior_box_var]
         bbox = ops.box_coder(
             prior_box=bbox,
-            prior_box_var=self.prior_box_var,
+            prior_box_var=prior_box_var,
             target_box=bbox_pred,
             code_type=self.code_type,
             box_normalized=self.box_normalized,

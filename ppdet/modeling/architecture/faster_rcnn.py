@@ -86,18 +86,16 @@ class FasterRCNN(BaseArch):
 
         # BBox loss
         bbox_targets = self.proposal.get_targets()
-        loss_bbox = self.bbox_head.get_loss(self.bbox_head_out, bbox_targets)
+        loss_bbox = self.bbox_head.get_loss([self.bbox_head_out], bbox_targets)
         loss.update(loss_bbox)
         total_loss = paddle.add_n(list(loss.values()))
         loss.update({'loss': total_loss})
         return loss
 
-    def get_pred(self, return_numpy=True):
+    def get_pred(self):
         bbox, bbox_num = self.bboxes
         output = {
-            'bbox': bbox.numpy(),
-            'bbox_num': bbox_num.numpy(),
-            'im_id': self.inputs['im_id'].numpy()
+            'bbox': bbox,
+            'bbox_num': bbox_num,
         }
-
         return output

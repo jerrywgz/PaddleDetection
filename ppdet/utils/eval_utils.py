@@ -33,7 +33,7 @@ def json_eval_results(metric, json_directory=None, dataset=None):
             logger.info("{} not exists!".format(v_json))
 
 
-def get_infer_results(outs_res, eval_type, catid):
+def get_infer_results(outs_res, eval_type, catid, im_info):
     """
     Get result at the stage of inference.
     The output format is dictionary containing bbox or mask result.
@@ -49,16 +49,21 @@ def get_infer_results(outs_res, eval_type, catid):
 
     if 'bbox' in eval_type:
         box_res = []
-        for outs in outs_res:
-            box_res += get_det_res(outs['bbox'], outs['bbox_num'],
-                                   outs['im_id'], catid)
+        for i, outs in enumerate(outs_res):
+            im_ids = im_info[i][2]
+            box_res += get_det_res(outs['bbox'], outs['bbox_num'], im_ids,
+                                   catid)
         infer_res['bbox'] = box_res
 
     if 'mask' in eval_type:
         seg_res = []
-        for outs in outs_res:
-            seg_res += get_seg_res(outs['mask'], outs['bbox_num'],
-                                   outs['im_id'], catid)
+        # mask post process
+        for i, outs in enumerate(outs_res):
+            im_shape = im_info[i][0]
+            scale_factor = im_info[i][1]
+            im_ids = im_info[i][2]
+            mask = outs['mask']
+            seg_res += get_seg_res(mask, outs['bbox_num'], im_ids, catid)
         infer_res['mask'] = seg_res
 
     return infer_res

@@ -273,12 +273,14 @@ class TTFHead(object):
         # batch size is 1
         scores_r = fluid.layers.reshape(scores, [cat, -1])
         topk_scores, topk_inds = fluid.layers.topk(scores_r, k)
-        topk_ys = topk_inds / width
+        topk_ys = topk_inds // width
         topk_xs = topk_inds % width
 
         topk_score_r = fluid.layers.reshape(topk_scores, [-1])
         topk_score, topk_ind = fluid.layers.topk(topk_score_r, k)
-        topk_clses = fluid.layers.cast(topk_ind / k, 'float32')
+        k_t = fluid.layers.assign(np.array([k], dtype='int64'))
+        topk_clses = fluid.layers.cast(topk_ind / k_t, 'float32')
+        #topk_clses = fluid.layers.cast(topk_ind // k, 'float32')
 
         topk_inds = fluid.layers.reshape(topk_inds, [-1])
         topk_ys = fluid.layers.reshape(topk_ys, [-1, 1])

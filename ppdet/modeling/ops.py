@@ -17,8 +17,9 @@ import paddle.nn.functional as F
 import paddle.nn as nn
 from paddle import ParamAttr
 from paddle.regularizer import L2Decay
-
+from paddle.nn.initializer import Constant, Normal
 from paddle.fluid.framework import Variable, in_dygraph_mode
+from paddle.fluid.layers import utils
 from paddle.fluid import core
 from paddle.fluid.layer_helper import LayerHelper
 from paddle.fluid.dygraph import layers
@@ -42,10 +43,11 @@ __all__ = [
     'collect_fpn_proposals',
     'matrix_nms',
     'batch_norm',
+    'deform_conv2d',
 ]
 
 
-def batch_norm(ch, norm_type='bn', name=None):
+def batch_norm(ch, norm_type='bn', norm_decay=0., initializer=None, name=None):
     bn_name = name + '.bn'
     if norm_type == 'sync_bn':
         batch_norm = nn.SyncBatchNorm
@@ -55,12 +57,14 @@ def batch_norm(ch, norm_type='bn', name=None):
     return batch_norm(
         ch,
         weight_attr=ParamAttr(
-            name=bn_name + '.scale', regularizer=L2Decay(0.)),
+            name=bn_name + '.scale',
+            initializer=initializer,
+            regularizer=L2Decay(norm_decay)),
         bias_attr=ParamAttr(
-            name=bn_name + '.offset', regularizer=L2Decay(0.)))
+            name=bn_name + '.offset', regularizer=L2Decay(norm_decay)))
 
 
-@paddle.jit.not_to_static
+#@paddle.jit.not_to_static
 def roi_pool(input,
              rois,
              output_size,
@@ -160,7 +164,7 @@ def roi_pool(input,
         return pool_out, argmaxes
 
 
-@paddle.jit.not_to_static
+#@paddle.jit.not_to_static
 def roi_align(input,
               rois,
               output_size,
@@ -267,7 +271,7 @@ def roi_align(input,
         return align_out
 
 
-@paddle.jit.not_to_static
+#@paddle.jit.not_to_static
 def iou_similarity(x, y, box_normalized=True, name=None):
     """
     Computes intersection-over-union (IOU) between two box lists.
@@ -331,7 +335,7 @@ def iou_similarity(x, y, box_normalized=True, name=None):
         return out
 
 
-@paddle.jit.not_to_static
+#@paddle.jit.not_to_static
 def collect_fpn_proposals(multi_rois,
                           multi_scores,
                           min_level,
@@ -442,7 +446,7 @@ def collect_fpn_proposals(multi_rois,
         return output_rois, rois_num
 
 
-@paddle.jit.not_to_static
+#@paddle.jit.not_to_static
 def distribute_fpn_proposals(fpn_rois,
                              min_level,
                              max_level,
@@ -566,7 +570,7 @@ def distribute_fpn_proposals(fpn_rois,
         return multi_rois, restore_ind, rois_num_per_level
 
 
-@paddle.jit.not_to_static
+#@paddle.jit.not_to_static
 def yolo_box(
         x,
         origin_shape,
@@ -703,7 +707,7 @@ def yolo_box(
         return boxes, scores
 
 
-@paddle.jit.not_to_static
+#@paddle.jit.not_to_static
 def prior_box(input,
               image,
               min_sizes,
@@ -847,7 +851,7 @@ def prior_box(input,
         return box, var
 
 
-@paddle.jit.not_to_static
+#@paddle.jit.not_to_static
 def anchor_generator(input,
                      anchor_sizes=None,
                      aspect_ratios=None,
@@ -958,7 +962,7 @@ def anchor_generator(input,
         return anchor, var
 
 
-@paddle.jit.not_to_static
+#@paddle.jit.not_to_static
 def multiclass_nms(bboxes,
                    scores,
                    score_threshold,
@@ -1113,7 +1117,7 @@ def multiclass_nms(bboxes,
         return output, nms_rois_num, index
 
 
-@paddle.jit.not_to_static
+#@paddle.jit.not_to_static
 def matrix_nms(bboxes,
                scores,
                score_threshold,
@@ -1254,7 +1258,7 @@ def matrix_nms(bboxes,
         return output
 
 
-@paddle.jit.not_to_static
+#@paddle.jit.not_to_static
 def box_coder(prior_box,
               prior_box_var,
               target_box,
@@ -1408,7 +1412,7 @@ def box_coder(prior_box,
         return output_box
 
 
-@paddle.jit.not_to_static
+#@paddle.jit.not_to_static
 def generate_proposals(scores,
                        bbox_deltas,
                        im_shape,
@@ -1573,4 +1577,93 @@ def smooth_l1(input, label, inside_weight=None, outside_weight=None,
     out = out / delta
     out = paddle.reshape(out, shape=[out.shape[0], -1])
     out = paddle.sum(out, axis=1)
+    return out
+
+
+#@paddle.jit.not_to_static
+def deform_conv2d(x,
+                  offset,
+                  weight,
+                  bias=None,
+                  stride=1,
+                  padding=0,
+                  dilation=1,
+                  groups=1,
+                  mask=None,
+                  name=None):
+    stride = utils.convert_to_list(stride, 2, 'stride')
+    padding = utils.convert_to_list(padding, 2, 'padding')
+    dilation = utils.convert_to_list(dilation, 2, 'dilation')
+
+    use_deform_conv2d_v1 = True if mask is None else False
+
+    if in_dygraph_mode():
+        attrs = ('strides', stride, 'paddings', padding, 'dilations', dilation,
+                 'groups', groups, 'im2col_step', 1)
+        if use_deform_conv2d_v1:
+            op_type = 'deformable_conv_v1'
+            pre_bias = getattr(core.ops, op_type)(x, offset, weight, *attrs)
+        else:
+            op_type = 'deformable_conv'
+            pre_bias = getattr(core.ops, op_type)(x, offset, mask, weight,
+                                                  *attrs)
+        if bias is not None:
+            out = paddle.fluid.layers.nn.elementwise_add(pre_bias, bias, axis=1)
+        else:
+            out = pre_bias
+    else:
+        check_variable_and_dtype(x, "x", ['float32', 'float64'],
+                                 'deform_conv2d')
+        check_variable_and_dtype(offset, "offset", ['float32', 'float64'],
+                                 'deform_conv2d')
+
+        num_channels = x.shape[1]
+
+        helper = LayerHelper('deformable_conv', **locals())
+        dtype = helper.input_dtype()
+
+        stride = utils.convert_to_list(stride, 2, 'stride')
+        padding = utils.convert_to_list(padding, 2, 'padding')
+        dilation = utils.convert_to_list(dilation, 2, 'dilation')
+
+        pre_bias = helper.create_variable_for_type_inference(dtype)
+
+        if use_deform_conv2d_v1:
+            op_type = 'deformable_conv_v1'
+            inputs = {
+                'Input': x,
+                'Filter': weight,
+                'Offset': offset,
+            }
+        else:
+            op_type = 'deformable_conv'
+            inputs = {
+                'Input': x,
+                'Filter': weight,
+                'Offset': offset,
+                'Mask': mask,
+            }
+
+        outputs = {"Output": pre_bias}
+        attrs = {
+            'strides': stride,
+            'paddings': padding,
+            'dilations': dilation,
+            'groups': groups,
+            'deformable_groups': 1,
+            'im2col_step': 1,
+        }
+        helper.append_op(
+            type=op_type, inputs=inputs, outputs=outputs, attrs=attrs)
+
+        if bias is not None:
+            out = helper.create_variable_for_type_inference(dtype)
+            helper.append_op(
+                type='elementwise_add',
+                inputs={'X': [pre_bias],
+                        'Y': [bias]},
+                outputs={'Out': [out]},
+                attrs={'axis': 1})
+        else:
+            out = pre_bias
     return out

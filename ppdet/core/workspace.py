@@ -94,7 +94,7 @@ def _load_config_with_base(file_path):
     return file_cfg
 
 
-WITHOUT_BACKGROUND_ARCHS = ['YOLOv3']
+WITHOUT_BACKGROUND_ARCHS = ['YOLOv3', 'TTFNet']
 
 
 def _parse_with_background():

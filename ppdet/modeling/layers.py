@@ -16,7 +16,11 @@ import numpy as np
 from numbers import Integral
 
 import paddle
-from paddle import to_tensor
+import paddle.nn as nn
+from paddle import to_tensor, ParamAttr
+from paddle.fluid.layers import utils
+from paddle.fluid.layer_helper import LayerHelper
+from paddle.nn.initializer import Constant, Uniform, Normal
 from ppdet.core.workspace import register, serializable
 from ppdet.py_op.target import generate_rpn_anchor_target, generate_proposal_target, generate_mask_target
 from ppdet.py_op.post_process import bbox_post_process
@@ -523,3 +527,191 @@ class AnchorGrid(object):
             self._anchor_vars = anchor_vars
 
         return self._anchor_vars
+
+
+class DeformConv2D(nn.Layer):
+    def __init__(self,
+                 in_channels,
+                 out_channels,
+                 kernel_size,
+                 stride=1,
+                 padding=0,
+                 dilation=1,
+                 groups=1,
+                 weight_attr=None,
+                 bias_attr=None):
+        super(DeformConv2D, self).__init__()
+        assert weight_attr is not False, "weight_attr should not be False in Conv."
+        self._weight_attr = weight_attr
+        self._bias_attr = bias_attr
+        self._groups = groups
+        self._in_channels = in_channels
+        self._out_channels = out_channels
+        self._channel_dim = 1
+
+        self._stride = utils.convert_to_list(stride, 2, 'stride')
+        self._dilation = utils.convert_to_list(dilation, 2, 'dilation')
+        self._kernel_size = utils.convert_to_list(kernel_size, 2, 'kernel_size')
+
+        if in_channels % groups != 0:
+            raise ValueError("in_channels must be divisible by groups.")
+
+        self._padding = utils.convert_to_list(padding, 2, 'padding')
+
+        filter_shape = [out_channels, in_channels // groups] + self._kernel_size
+
+        def _get_default_param_initializer():
+            filter_elem_num = np.prod(self._kernel_size) * self._in_channels
+            std = (2.0 / filter_elem_num)**0.5
+            return Normal(0.0, std, 0)
+
+        self.weight = self.create_parameter(
+            shape=filter_shape,
+            attr=self._weight_attr,
+            default_initializer=_get_default_param_initializer())
+        self.bias = self.create_parameter(
+            attr=self._bias_attr, shape=[self._out_channels], is_bias=True)
+
+    def forward(self, x, offset, mask=None):
+        out = ops.deform_conv2d(
+            x=x,
+            offset=offset,
+            weight=self.weight,
+            bias=self.bias,
+            stride=self._stride,
+            padding=self._padding,
+            dilation=self._dilation,
+            groups=self._groups,
+            mask=mask)
+        return out
+
+
+class DeformableConvV2(nn.Layer):
+    def __init__(self,
+                 in_channels,
+                 out_channels,
+                 kernel_size,
+                 stride=1,
+                 padding=0,
+                 dilation=1,
+                 groups=1,
+                 weight_attr=None,
+                 bias_attr=None,
+                 mask_bias_lr=1.,
+                 mask_regularizer=None,
+                 name=None):
+        super(DeformableConvV2, self).__init__()
+        self.offset_channel = 2 * kernel_size**2
+        self.mask_channel = kernel_size**2
+        self.conv = nn.Conv2D(
+            in_channels,
+            3 * kernel_size**2,
+            kernel_size,
+            stride=stride,
+            padding=(kernel_size - 1) // 2,
+            weight_attr=ParamAttr(
+                initializer=Constant(0.0),
+                name='{}.conv_offset.weight'.format(name)),
+            bias_attr=ParamAttr(
+                initializer=Constant(0.0),
+                learning_rate=mask_bias_lr,
+                regularizer=mask_regularizer,
+                name='{}.conv_offset.bias'.format(name)))
+
+        self.dcn = DeformConv2D(
+            in_channels,
+            out_channels,
+            kernel_size,
+            stride=stride,
+            padding=(kernel_size - 1) // 2 * dilation,
+            dilation=dilation,
+            groups=groups,
+            weight_attr=weight_attr,
+            bias_attr=bias_attr)
+
+    def forward(self, x):
+        offset_mask = self.conv(x)
+        offset, mask = paddle.split(
+            offset_mask,
+            num_or_sections=[self.offset_channel, self.mask_channel],
+            axis=1)
+        mask = F.sigmoid(mask)
+        y = self.dcn(x, offset, mask=mask)
+        return y
+
+
+@register
+class TTFBox(object):
+    __shared__ = ['down_ratio']
+
+    def __init__(self, max_per_img=100, score_thresh=0.01, down_ratio=4):
+        super(TTFBox, self).__init__()
+        self.max_per_img = max_per_img
+        self.score_thresh = score_thresh
+        self.down_ratio = down_ratio
+
+    def _simple_nms(self, heat, kernel=3):
+        pad = (kernel - 1) // 2
+        hmax = F.max_pool2d(heat, kernel, stride=1, padding=pad)
+        keep = paddle.cast(hmax == heat, 'float32')
+        return heat * keep
+
+    def _topk(self, scores):
+        k = self.max_per_img
+        cat, height, width = scores.shape[1:]
+        # batch size is 1
+        scores_r = paddle.reshape(scores, [cat, -1])
+        topk_scores, topk_inds = paddle.topk(scores_r, k)
+        topk_scores, topk_inds = paddle.topk(scores_r, k)
+        topk_ys = topk_inds // width
+        topk_xs = topk_inds % width
+
+        topk_score_r = paddle.reshape(topk_scores, [-1])
+        topk_score, topk_ind = paddle.topk(topk_score_r, k)
+        k_t = paddle.full(topk_ind.shape, k, dtype='int64')
+        topk_clses = paddle.cast(paddle.floor_divide(topk_ind, k_t), 'float32')
+
+        topk_inds = paddle.reshape(topk_inds, [-1])
+        topk_ys = paddle.reshape(topk_ys, [-1, 1])
+        topk_xs = paddle.reshape(topk_xs, [-1, 1])
+        topk_inds = paddle.gather(topk_inds, topk_ind)
+        topk_ys = paddle.gather(topk_ys, topk_ind)
+        topk_xs = paddle.gather(topk_xs, topk_ind)
+
+        return topk_score, topk_inds, topk_clses, topk_ys, topk_xs
+
+    def __call__(self, hm, wh, im_shape, scale_factor):
+        heatmap = F.sigmoid(hm)
+        heat = self._simple_nms(heatmap)
+        scores, inds, clses, ys, xs = self._topk(heat)
+        ys = paddle.cast(ys, 'float32') * self.down_ratio
+        xs = paddle.cast(xs, 'float32') * self.down_ratio
+        scores = paddle.tensor.unsqueeze(scores, [1])
+        clses = paddle.tensor.unsqueeze(clses, [1])
+
+        wh_t = paddle.transpose(wh, [0, 2, 3, 1])
+        wh = paddle.reshape(wh_t, [-1, wh_t.shape[-1]])
+        wh = paddle.gather(wh, inds)
+
+        x1 = xs - wh[:, 0:1]
+        y1 = ys - wh[:, 1:2]
+        x2 = xs + wh[:, 2:3]
+        y2 = ys + wh[:, 3:4]
+
+        bboxes = paddle.concat([x1, y1, x2, y2], axis=1)
+
+        scale_y = scale_factor[:, 0:1]
+        scale_x = scale_factor[:, 1:2]
+        scale_expand = paddle.concat(
+            [scale_x, scale_y, scale_x, scale_y], axis=1)
+        scale_expand = paddle.expand_as(scale_expand, bboxes)
+        bboxes = paddle.divide(bboxes, scale_expand)
+        results = paddle.concat([clses, scores, bboxes], axis=1)
+        # hack: append result with cls=-1 and score=1. to avoid all scores
+        # are less than score_thresh which may cause error in gather.
+        fill_r = paddle.to_tensor([[-1, 1, 0, 0, 0, 0]], dtype='float32')
+        results = paddle.concat([results, fill_r])
+        scores = results[:, 1]
+        valid_ind = paddle.nonzero(scores > self.score_thresh)
+        results = paddle.gather(results, valid_ind)
+        return results, paddle.shape(results)[0:1]

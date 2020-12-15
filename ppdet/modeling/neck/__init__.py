@@ -14,6 +14,8 @@
 
 from . import fpn
 from . import yolo_fpn
+from . import ttf_fpn
 
 from .fpn import *
 from .yolo_fpn import *
+from .ttf_fpn import *

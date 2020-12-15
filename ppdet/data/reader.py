@@ -39,6 +39,11 @@ class Compose(object):
                         'target{}'.format(i)
                         for i in range(len(v['anchor_masks']))
                     ])
+                elif op_cls in [transform.Gt2TTFTargetOp]:
+                    output_fields = [
+                        'image', 'ttf_heatmap', 'ttf_box_target',
+                        'ttf_reg_weight'
+                    ]
 
         self.fields = fields
         self.output_fields = output_fields if output_fields else fields

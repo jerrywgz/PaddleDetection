@@ -16,9 +16,13 @@ class BBoxPostProcess(object):
         self.decode = decode
         self.nms = nms
 
-    def __call__(self, head_out, rois, im_shape, scale_factor=None):
-        bboxes, score = self.decode(head_out, rois, im_shape, scale_factor)
-        bbox_pred, bbox_num, _ = self.nms(bboxes, score)
+    def __call__(self, head_out, rois, im_shape, scale_factor):
+        if self.nms is not None:
+            bboxes, score = self.decode(head_out, rois, im_shape, scale_factor)
+            bbox_pred, bbox_num, _ = self.nms(bboxes, score)
+        else:
+            bbox_pred, bbox_num = self.decode(head_out, rois, im_shape,
+                                              scale_factor)
         return bbox_pred, bbox_num
 
 

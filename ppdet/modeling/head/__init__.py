@@ -16,10 +16,12 @@ from . import rpn_head
 from . import bbox_head
 from . import mask_head
 from . import yolo_head
+from . import ttf_head
 from . import roi_extractor
 
 from .rpn_head import *
 from .bbox_head import *
 from .mask_head import *
 from .yolo_head import *
+from .ttf_head import *
 from .roi_extractor import *

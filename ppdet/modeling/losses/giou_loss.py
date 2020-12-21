@@ -121,7 +121,8 @@ class GiouLoss(object):
 
         area_c = (xc2 - xc1) * (yc2 - yc1) + eps
         miouk = iouk - ((area_c - unionk) / area_c)
-
+        print('miouk: ', miouk)
+        fluid.layers.Print(miouk)
         iou_weights = 1
         if inside_weight is not None and outside_weight is not None:
             inside_weight = fluid.layers.reshape(inside_weight, shape=(-1, 4))

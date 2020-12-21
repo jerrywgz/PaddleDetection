@@ -49,7 +49,7 @@ class TTFNet(object):
 
     def build(self, feed_vars, mode='train', exclude_nms=False):
         im = feed_vars['image']
-
+        fluid.layers.Print(im)
         mixed_precision_enabled = mixed_precision_global_state() is not None
 
         # cast inputs to FP16
@@ -68,10 +68,18 @@ class TTFNet(object):
 
         predict_hm, predict_wh = self.ttf_head.get_output(
             body_feats, 'ttf_head', is_test=mode == 'test')
+        print('predict_hm: ', predict_hm)
+        fluid.layers.Print(predict_hm)
+        print('predict_wh: ', predict_wh)
+        fluid.layers.Print(predict_wh)
+
         if mode == 'train':
             heatmap = feed_vars['ttf_heatmap']
             box_target = feed_vars['ttf_box_target']
             reg_weight = feed_vars['ttf_reg_weight']
+            fluid.layers.Print(heatmap)
+            fluid.layers.Print(box_target)
+            fluid.layers.Print(reg_weight)
             loss = self.ttf_head.get_loss(predict_hm, predict_wh, heatmap,
                                           box_target, reg_weight)
             total_loss = fluid.layers.sum(list(loss.values()))

@@ -170,8 +170,8 @@ class TTFHead(object):
             name=norm_name + '.output.1',
             moving_mean_name=norm_name + '.running_mean',
             moving_variance_name=norm_name + '.running_var')
-        up = fluid.layers.resize_bilinear(
-            bn, scale=2, name=name + '.2.upsample')
+        up = fluid.layers.resize_nearest(bn, scale=2, name=name + '.2.upsample')
+
         return up
 
     def _head(self,
@@ -257,6 +257,8 @@ class TTFHead(object):
                     name=name + '.shortcut_layers.' + str(i))
                 feat = fluid.layers.elementwise_add(feat, shortcut)
 
+        print('feat: ', feat)
+        fluid.layers.Print(feat)
         hm = self.hm_head(feat, name=name + '.hm', is_test=is_test)
         wh = self.wh_head(feat, name=name + '.wh') * self.wh_offset_base
 
@@ -266,6 +268,10 @@ class TTFHead(object):
         pad = (kernel - 1) // 2
         hmax = fluid.layers.pool2d(heat, kernel, 'max', pool_padding=pad)
         keep = fluid.layers.cast(hmax == heat, 'float32')
+        print('hmax: ', hmax)
+        print('keep: ', keep)
+        fluid.layers.Print(hmax)
+        fluid.layers.Print(keep)
         return heat * keep
 
     def _topk(self, scores, k):
@@ -273,12 +279,13 @@ class TTFHead(object):
         # batch size is 1
         scores_r = fluid.layers.reshape(scores, [cat, -1])
         topk_scores, topk_inds = fluid.layers.topk(scores_r, k)
-        topk_ys = topk_inds / width
+        topk_ys = topk_inds // width
         topk_xs = topk_inds % width
 
         topk_score_r = fluid.layers.reshape(topk_scores, [-1])
         topk_score, topk_ind = fluid.layers.topk(topk_score_r, k)
-        topk_clses = fluid.layers.cast(topk_ind / k, 'float32')
+        k_t = fluid.layers.assign(np.array([k], dtype='int64'))
+        topk_clses = fluid.layers.cast(topk_ind / k_t, 'float32')
 
         topk_inds = fluid.layers.reshape(topk_inds, [-1])
         topk_ys = fluid.layers.reshape(topk_ys, [-1, 1])
@@ -293,6 +300,15 @@ class TTFHead(object):
         heatmap = fluid.layers.sigmoid(heatmap)
         heat = self._simple_nms(heatmap)
         scores, inds, clses, ys, xs = self._topk(heat, self.max_per_img)
+        print('scores: ', scores)
+        print('inds: ', inds)
+        print('clses: ', clses)
+        print('xs: ', xs)
+
+        fluid.layers.Print(scores)
+        fluid.layers.Print(inds)
+        fluid.layers.Print(clses)
+        fluid.layers.Print(xs)
         ys = fluid.layers.cast(ys, 'float32') * self.down_ratio
         xs = fluid.layers.cast(xs, 'float32') * self.down_ratio
         scores = fluid.layers.unsqueeze(scores, [1])
@@ -306,8 +322,17 @@ class TTFHead(object):
         y1 = ys - wh[:, 1:2]
         x2 = xs + wh[:, 2:3]
         y2 = ys + wh[:, 3:4]
+        print('xs: ', xs)
+        print('ys: ', ys)
+        print('wh: ', wh)
+        fluid.layers.Print(xs)
+        fluid.layers.Print(ys)
+        fluid.layers.Print(wh)
         bboxes = fluid.layers.concat([x1, y1, x2, y2], axis=1)
         bboxes = fluid.layers.elementwise_div(bboxes, scale_factor, axis=-1)
+        print('bboxes: ', bboxes)
+        fluid.layers.Print(bboxes)
+        fluid.layers.Print(scale_factor)
         results = fluid.layers.concat([clses, scores, bboxes], axis=1)
         # hack: append result with cls=-1 and score=1. to avoid all scores
         # are less than score_thresh which may cause error in gather.
@@ -318,6 +343,7 @@ class TTFHead(object):
         scores = results[:, 1]
         valid_ind = fluid.layers.where(scores > self.score_thresh)
         results = fluid.layers.gather(results, valid_ind)
+        fluid.layers.Print(results)
         return {'bbox': results}
 
     def ct_focal_loss(self, pred_hm, target_hm, gamma=2.0):
@@ -378,6 +404,13 @@ class TTFHead(object):
         pred_boxes, boxes, mask = self.filter_box_by_weight(pred_boxes, boxes,
                                                             mask)
         mask.stop_gradient = True
+        print('pred_boxes: ', pred_boxes)
+        fluid.layers.Print(pred_boxes)
+        print('boxes: ', boxes)
+        fluid.layers.Print(boxes)
+        print('mask: ', mask)
+        fluid.layers.Print(mask)
+
         wh_loss = self.wh_loss(
             pred_boxes, boxes, outside_weight=mask, use_transform=False)
         wh_loss = wh_loss / avg_factor

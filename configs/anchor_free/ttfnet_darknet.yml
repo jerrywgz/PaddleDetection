@@ -1,11 +1,11 @@
 architecture: TTFNet
 use_gpu: true
-max_iters: 15000
-log_iter: 20
+max_iters: 2 #15000
+log_iter: 1 #20
 save_dir: output
 snapshot_iter: 1000
 metric: COCO
-pretrain_weights: https://paddle-imagenet-models-name.bj.bcebos.com/DarkNet53_pretrained.tar
+pretrain_weights: https://paddlemodels.bj.bcebos.com/object_detection/ttfnet_darknet.pdparams #https://paddle-imagenet-models-name.bj.bcebos.com/DarkNet53_pretrained.tar
 weights: output/ttfnet_darknet/model_final
 num_classes: 80
 
@@ -57,17 +57,17 @@ TrainReader:
     fields: ['image', 'ttf_heatmap', 'ttf_box_target', 'ttf_reg_weight']
   dataset:
     !COCODataSet
-    image_dir: train2017
-    anno_path: annotations/instances_train2017.json
-    dataset_dir: dataset/coco
+    image_dir: val2017
+    anno_path: annotations/instances_val2017_debug_139.json
+    dataset_dir: /paddle/dataset/coco
     with_background: false
   sample_transforms:
   - !DecodeImage
     to_rgb: true
   - !Resize
     target_dim: 512
-  - !RandomFlipImage
-    prob: 0.5
+  #- !RandomFlipImage
+  #  prob: 0.5
   - !NormalizeImage
     is_channel_first: false
     is_scale: false
@@ -82,7 +82,7 @@ TrainReader:
     down_ratio: 4
   - !PadBatch
     pad_to_stride: 32
-  batch_size: 12
+  batch_size: 1
   shuffle: true
   worker_num: 8
   bufsize: 2
@@ -95,8 +95,8 @@ EvalReader:
   dataset:
     !COCODataSet
       image_dir: val2017
-      anno_path: annotations/instances_val2017.json
-      dataset_dir: dataset/coco
+      anno_path: annotations/instances_val2017_debug_139.json
+      dataset_dir: /paddle/dataset/coco
       with_background: false
   sample_transforms:
     - !DecodeImage

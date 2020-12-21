@@ -260,7 +260,7 @@ class MaskRCNN(object):
                     body_feats, mask_rois, spatial_scale, is_mask=True)
 
             mask_out = self.mask_head.get_prediction(mask_feat, bbox)
-            fluid.layers.assign(input=mask_out, output=mask_pred)
+            fluid.layers.assign(input=mask_rois, output=mask_pred)
 
         fluid.layers.cond(cond, noop, process_boxes)
         return mask_pred, bbox_pred

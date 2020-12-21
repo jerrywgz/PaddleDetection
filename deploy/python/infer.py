@@ -174,6 +174,7 @@ class Detector(object):
                     masks_tensor = self.predictor.get_output_tensor(
                         output_names[1])
                     np_masks = masks_tensor.copy_to_cpu()
+                    print('np_masks: ', np_masks, np_masks.shape)
             t2 = time.time()
             ms = (t2 - t1) * 1000.0 / repeats
             print("Inference: {} ms per batch image".format(ms))
@@ -475,7 +476,7 @@ def predict_video(detector, camera_id):
     fps = 30
     width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    fourcc = cv2.VideoWriter_fourcc(* 'mp4v')
     if not os.path.exists(FLAGS.output_dir):
         os.makedirs(FLAGS.output_dir)
     out_path = os.path.join(FLAGS.output_dir, video_name)

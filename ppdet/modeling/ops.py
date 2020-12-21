@@ -106,7 +106,6 @@ def DeformConv(input,
             learning_rate=lr_scale),
         bias_attr=bias_para,
         name=name + ".conv2d.output.1")
-
     return conv
 
 

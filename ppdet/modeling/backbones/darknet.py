@@ -165,6 +165,7 @@ class DarkNet(object):
                 name=self.prefix_name + "stage.{}".format(i))
             if i < self.freeze_at:
                 block.stop_gradient = True
+            fluid.layers.Print(block)
             blocks.append(block)
             if i < len(stages) - 1:  # do not downsaple in the last stage
                 downsample_ = self._downsample(

@@ -64,6 +64,13 @@ class MaskRCNN(BaseArch):
 
     def model_arch(self):
         # Backbone
+        #import pickle
+        #im = pickle.load(open('image.npy', 'rb'))
+        #gt_bbox = pickle.load(open('gt_boxes.npy', 'rb'))
+        #gt_segms = pickle.load(open('gt_segms.npy', 'rb'))
+        #self.inputs['image'] = paddle.to_tensor(im)
+        #self.inputs['gt_poly'] = paddle.to_tensor(gt_segms)
+        #self.inputs['gt_bbox'] = paddle.to_tensor(gt_bbox).unsqueeze(0)
         body_feats = self.backbone(self.inputs)
         spatial_scale = 1. / 16
 
@@ -72,28 +79,26 @@ class MaskRCNN(BaseArch):
             body_feats, spatial_scale = self.neck(body_feats)
 
         # RPN
-        # rpn_head returns two list: rpn_feat, rpn_head_out 
-        # each element in rpn_feats contains rpn feature on each level,
-        # and the length is 1 when the neck is not applied.
-        # each element in rpn_head_out contains (rpn_rois_score, rpn_rois_delta)
-        rpn_feat, self.rpn_head_out = self.rpn_head(self.inputs, body_feats)
+        # rpn_head_out contains (rpn_rois_score, rpn_rois_delta)
+        self.rpn_rois_score, self.rpn_rois_delta = self.rpn_head(body_feats)
 
         # Anchor
         # anchor_out returns a list,
         # each element contains (anchor, anchor_var)
-        self.anchor_out = self.anchor(rpn_feat)
+        self.anchor_out = self.anchor(body_feats)
 
         # Proposal RoI 
         # compute targets here when training
-        rois = self.proposal(self.inputs, self.rpn_head_out, self.anchor_out)
+        self.rois = self.proposal(self.inputs, self.rpn_rois_score,
+                                  self.rpn_rois_delta, self.anchor_out)
         # BBox Head
-        bbox_feat, self.bbox_head_out, self.bbox_head_feat_func = self.bbox_head(
-            body_feats, rois, spatial_scale)
+        bbox_feat, self.bbox_head_out, bbox_head_feat_func = self.bbox_head(
+            body_feats, self.rois, spatial_scale)
 
-        rois_has_mask_int32 = None
+        mask_index = None
         if self.inputs['mode'] == 'infer':
             bbox_pred, bboxes = self.bbox_head.get_prediction(
-                self.bbox_head_out, rois)
+                self.bbox_head_out, self.rois)
             # Refine bbox by the output from bbox_head at test stage
             self.bboxes = self.bbox_post_process(bbox_pred, bboxes,
                                                  self.inputs['im_shape'],
@@ -102,31 +107,33 @@ class MaskRCNN(BaseArch):
             # Proposal RoI for Mask branch
             # bboxes update at training stage only
             bbox_targets = self.proposal.get_targets()[0]
-            self.bboxes, rois_has_mask_int32 = self.mask(self.inputs, rois,
-                                                         bbox_targets)
+            self.bboxes, self.mask_label, self.mask_target, mask_index, self.mask_weight = self.mask(
+                self.inputs, self.rois, bbox_targets)
 
         # Mask Head 
-        self.mask_head_out = self.mask_head(
-            self.inputs, body_feats, self.bboxes, bbox_feat,
-            rois_has_mask_int32, spatial_scale, self.bbox_head_feat_func)
+        self.mask_head_out = self.mask_head(self.inputs, body_feats,
+                                            self.bboxes, bbox_feat, mask_index,
+                                            spatial_scale, bbox_head_feat_func)
 
     def get_loss(self, ):
         loss = {}
 
         # RPN loss
         rpn_loss_inputs = self.anchor.generate_loss_inputs(
-            self.inputs, self.rpn_head_out, self.anchor_out)
+            self.inputs, self.rpn_rois_score, self.rpn_rois_delta,
+            self.anchor_out)
         loss_rpn = self.rpn_head.get_loss(rpn_loss_inputs)
         loss.update(loss_rpn)
 
         # BBox loss
         bbox_targets = self.proposal.get_targets()
-        loss_bbox = self.bbox_head.get_loss([self.bbox_head_out], bbox_targets)
+        loss_bbox = self.bbox_head.get_loss([self.bbox_head_out], bbox_targets,
+                                            self.rois)
         loss.update(loss_bbox)
 
         # Mask loss
-        mask_targets = self.mask.get_targets()
-        loss_mask = self.mask_head.get_loss(self.mask_head_out, mask_targets)
+        loss_mask = self.mask_head.get_loss(self.mask_head_out, self.mask_label,
+                                            self.mask_target, self.mask_weight)
         loss.update(loss_mask)
 
         total_loss = paddle.add_n(list(loss.values()))

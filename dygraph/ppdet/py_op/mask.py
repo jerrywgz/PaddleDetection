@@ -4,7 +4,7 @@ import numpy as np
 from numba import jit
 
 
-@jit
+#@jit
 def decode(cnts, m):
     v = 0
     mask = []
@@ -121,7 +121,7 @@ def polys_to_boxes(polys):
     return boxes_from_polys
 
 
-@jit
+#@jit
 def bbox_overlaps_mask(boxes, query_boxes):
     N = boxes.shape[0]
     K = query_boxes.shape[0]
@@ -144,7 +144,7 @@ def bbox_overlaps_mask(boxes, query_boxes):
     return overlaps
 
 
-@jit
+#@jit
 def polys_to_mask_wrt_box(polygons, box, M):
     """Convert from the COCO polygon segmentation format to a binary mask
     encoded as a 2D array of data type numpy.float32. The polygon segmentation

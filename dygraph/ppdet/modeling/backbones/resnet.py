@@ -179,7 +179,6 @@ class BottleNeck(nn.Layer):
 
         out = paddle.add(x=out, y=short)
         out = F.relu(out)
-
         return out
 
 
@@ -218,8 +217,10 @@ class Blocks(nn.Layer):
 
     def forward(self, inputs):
         block_out = inputs
+        i = 0
         for block in self.blocks:
             block_out = block(block_out)
+            i += 1
         return block_out
 
 
@@ -284,8 +285,6 @@ class ResNet(nn.Layer):
                     lr=lr_mult,
                     name=_name))
 
-        self.pool = MaxPool2D(kernel_size=3, stride=2, padding=1)
-
         ch_in_list = [64, 256, 512, 1024]
         ch_out_list = [64, 128, 256, 512]
 
@@ -310,7 +309,7 @@ class ResNet(nn.Layer):
     def forward(self, inputs):
         x = inputs['image']
         conv1 = self.conv1(x)
-        x = self.pool(conv1)
+        x = F.max_pool2d(conv1, kernel_size=3, stride=2, padding=1)
         outs = []
         for idx, stage in enumerate(self.res_layers):
             x = stage(x)

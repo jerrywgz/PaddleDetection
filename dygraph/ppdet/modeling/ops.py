@@ -60,7 +60,7 @@ def batch_norm(ch, norm_type='bn', name=None):
             name=bn_name + '.offset', regularizer=L2Decay(0.)))
 
 
-@paddle.jit.not_to_static
+#@paddle.jit.not_to_static
 def roi_pool(input,
              rois,
              output_size,
@@ -160,13 +160,14 @@ def roi_pool(input,
         return pool_out, argmaxes
 
 
-@paddle.jit.not_to_static
+#@paddle.jit.not_to_static
 def roi_align(input,
               rois,
               output_size,
               spatial_scale=1.0,
               sampling_ratio=-1,
               rois_num=None,
+              aligned=True,
               name=None):
     """
 
@@ -237,7 +238,7 @@ def roi_align(input,
         align_out = core.ops.roi_align(
             input, rois, rois_num, "pooled_height", pooled_height,
             "pooled_width", pooled_width, "spatial_scale", spatial_scale,
-            "sampling_ratio", sampling_ratio)
+            "sampling_ratio", sampling_ratio, "aligned", aligned)
         return align_out
 
     else:
@@ -262,12 +263,13 @@ def roi_align(input,
                 "pooled_height": pooled_height,
                 "pooled_width": pooled_width,
                 "spatial_scale": spatial_scale,
-                "sampling_ratio": sampling_ratio
+                "sampling_ratio": sampling_ratioi,
+                "aligned": aligned,
             })
         return align_out
 
 
-@paddle.jit.not_to_static
+#@paddle.jit.not_to_static
 def iou_similarity(x, y, box_normalized=True, name=None):
     """
     Computes intersection-over-union (IOU) between two box lists.
@@ -331,7 +333,7 @@ def iou_similarity(x, y, box_normalized=True, name=None):
         return out
 
 
-@paddle.jit.not_to_static
+#@paddle.jit.not_to_static
 def collect_fpn_proposals(multi_rois,
                           multi_scores,
                           min_level,
@@ -442,7 +444,7 @@ def collect_fpn_proposals(multi_rois,
         return output_rois, rois_num
 
 
-@paddle.jit.not_to_static
+#@paddle.jit.not_to_static
 def distribute_fpn_proposals(fpn_rois,
                              min_level,
                              max_level,
@@ -566,7 +568,7 @@ def distribute_fpn_proposals(fpn_rois,
         return multi_rois, restore_ind, rois_num_per_level
 
 
-@paddle.jit.not_to_static
+#@paddle.jit.not_to_static
 def yolo_box(
         x,
         origin_shape,
@@ -703,7 +705,7 @@ def yolo_box(
         return boxes, scores
 
 
-@paddle.jit.not_to_static
+#@paddle.jit.not_to_static
 def prior_box(input,
               image,
               min_sizes,
@@ -844,7 +846,7 @@ def prior_box(input,
         return box, var
 
 
-@paddle.jit.not_to_static
+#@paddle.jit.not_to_static
 def anchor_generator(input,
                      anchor_sizes=None,
                      aspect_ratios=None,
@@ -955,7 +957,7 @@ def anchor_generator(input,
         return anchor, var
 
 
-@paddle.jit.not_to_static
+#@paddle.jit.not_to_static
 def multiclass_nms(bboxes,
                    scores,
                    score_threshold,
@@ -1068,7 +1070,7 @@ def multiclass_nms(bboxes,
                  'normalized', normalized)
         output, index, nms_rois_num = core.ops.multiclass_nms3(bboxes, scores,
                                                                rois_num, *attrs)
-        if return_index:
+        if not return_index:
             index = None
         return output, nms_rois_num, index
 
@@ -1110,7 +1112,7 @@ def multiclass_nms(bboxes,
         return output, nms_rois_num, index
 
 
-@paddle.jit.not_to_static
+#@paddle.jit.not_to_static
 def matrix_nms(bboxes,
                scores,
                score_threshold,
@@ -1356,7 +1358,7 @@ def bipartite_match(dist_matrix,
     return match_indices, match_distance
 
 
-@paddle.jit.not_to_static
+#@paddle.jit.not_to_static
 def box_coder(prior_box,
               prior_box_var,
               target_box,
@@ -1510,7 +1512,7 @@ def box_coder(prior_box,
         return output_box
 
 
-@paddle.jit.not_to_static
+#@paddle.jit.not_to_static
 def generate_proposals(scores,
                        bbox_deltas,
                        im_shape,
@@ -1663,16 +1665,3 @@ def sigmoid_cross_entropy_with_logits(input,
         sum_valid_mask = paddle.sum(mask_tensor)
         output = output / sum_valid_mask
     return output
-
-
-def smooth_l1(input, label, inside_weight=None, outside_weight=None,
-              sigma=None):
-    input_new = paddle.multiply(input, inside_weight)
-    label_new = paddle.multiply(label, inside_weight)
-    delta = 1 / (sigma * sigma)
-    out = F.smooth_l1_loss(input_new, label_new, reduction='none', delta=delta)
-    out = paddle.multiply(out, outside_weight)
-    out = out / delta
-    out = paddle.reshape(out, shape=[out.shape[0], -1])
-    out = paddle.sum(out, axis=1)
-    return out

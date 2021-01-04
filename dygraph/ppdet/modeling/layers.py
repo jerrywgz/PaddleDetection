@@ -37,30 +37,72 @@ class AnchorGeneratorRPN(object):
     def __init__(self,
                  anchor_sizes=[32, 64, 128, 256, 512],
                  aspect_ratios=[0.5, 1.0, 2.0],
-                 stride=[16.0, 16.0],
+                 strides=[16],
                  variance=[1.0, 1.0, 1.0, 1.0],
-                 anchor_start_size=None):
+                 offset=0.):
         super(AnchorGeneratorRPN, self).__init__()
         self.anchor_sizes = anchor_sizes
         self.aspect_ratios = aspect_ratios
-        self.stride = stride
+        self.strides = strides
         self.variance = variance
-        self.anchor_start_size = anchor_start_size
+        self.cell_anchors = self._calculate_anchors(len(strides))
+        self.offset = offset
 
-    def __call__(self, input, level=None):
-        anchor_sizes = self.anchor_sizes if (
-            level is None or self.anchor_start_size is None) else (
-                self.anchor_start_size * 2**level)
-        stride = self.stride if (
-            level is None or self.anchor_start_size is None) else (
-                self.stride[0] * (2.**level), self.stride[1] * (2.**level))
-        anchor, var = ops.anchor_generator(
-            input=input,
-            anchor_sizes=anchor_sizes,
-            aspect_ratios=self.aspect_ratios,
-            stride=stride,
-            variance=self.variance)
-        return anchor, var
+    def _broadcast_params(self, params, num_features):
+        if not isinstance(params[0], (list, tuple)):  # list[float]
+            return [params] * num_features
+        if len(params) == 1:
+            return list(params) * num_features
+        return params
+
+    def generate_cell_anchors(self, sizes, aspect_ratios):
+        anchors = []
+        for size in sizes:
+            area = size**2.0
+            for aspect_ratio in aspect_ratios:
+                w = math.sqrt(area / aspect_ratio)
+                h = aspect_ratio * w
+                x0, y0, x1, y1 = -w / 2.0, -h / 2.0, w / 2.0, h / 2.0
+                anchors.append([x0, y0, x1, y1])
+        return paddle.to_tensor(anchors)
+
+    def _calculate_anchors(self, num_features):
+        sizes = self._broadcast_params(self.anchor_sizes, num_features)
+        aspect_ratios = self._broadcast_params(self.aspect_ratios, num_features)
+        cell_anchors = [
+            self.generate_cell_anchors(s, a).cast('float32')
+            for s, a in zip(sizes, aspect_ratios)
+        ]
+        return cell_anchors
+
+    def _create_grid_offsets(self, size, stride, offset):
+        grid_height, grid_width = size
+        shifts_x = paddle.arange(
+            offset * stride, grid_width * stride, step=stride, dtype='float32')
+        shifts_y = paddle.arange(
+            offset * stride, grid_height * stride, step=stride, dtype='float32')
+        shift_y, shift_x = paddle.meshgrid(shifts_y, shifts_x)
+        shift_x = shift_x.reshape([-1])
+        shift_y = shift_y.reshape([-1])
+        return shift_x, shift_y
+
+    def _grid_anchors(self, grid_sizes):
+        anchors = []
+        for size, stride, base_anchors in zip(grid_sizes, self.strides,
+                                              self.cell_anchors):
+            shift_x, shift_y = self._create_grid_offsets(size, stride,
+                                                         self.offset)
+            shifts = paddle.stack((shift_x, shift_y, shift_x, shift_y), axis=1)
+
+            anchors.append((shifts.reshape([-1, 1, 4]) + base_anchors.reshape(
+                [1, -1, 4])).reshape([-1, 4]))
+
+        return anchors
+
+    def __call__(self, input):
+        grid_sizes = [feature_map.shape[-2:] for feature_map in input]
+        anchors_over_all_feature_maps = self._grid_anchors(grid_sizes)
+        return anchors_over_all_feature_maps
 
 
 @register
@@ -68,46 +110,29 @@ class AnchorGeneratorRPN(object):
 class AnchorTargetGeneratorRPN(object):
     def __init__(self,
                  batch_size_per_im=256,
-                 straddle_thresh=0.,
                  fg_fraction=0.5,
                  positive_overlap=0.7,
                  negative_overlap=0.3,
                  use_random=True):
         super(AnchorTargetGeneratorRPN, self).__init__()
         self.batch_size_per_im = batch_size_per_im
-        self.straddle_thresh = straddle_thresh
         self.fg_fraction = fg_fraction
         self.positive_overlap = positive_overlap
         self.negative_overlap = negative_overlap
         self.use_random = use_random
 
-    def __call__(self, cls_logits, bbox_pred, anchor_box, gt_boxes, is_crowd,
-                 im_info):
-        anchor_box = anchor_box.numpy()
-        gt_boxes = gt_boxes.numpy()
-        is_crowd = is_crowd.numpy()
-        im_info = im_info.numpy()
-        loc_indexes, score_indexes, tgt_labels, tgt_bboxes, bbox_inside_weights = generate_rpn_anchor_target(
-            anchor_box, gt_boxes, is_crowd, im_info, self.straddle_thresh,
-            self.batch_size_per_im, self.positive_overlap,
-            self.negative_overlap, self.fg_fraction, self.use_random)
-
-        loc_indexes = to_tensor(loc_indexes)
-        score_indexes = to_tensor(score_indexes)
-        tgt_labels = to_tensor(tgt_labels)
-        tgt_bboxes = to_tensor(tgt_bboxes)
-        bbox_inside_weights = to_tensor(bbox_inside_weights)
-
-        loc_indexes.stop_gradient = True
-        score_indexes.stop_gradient = True
-        tgt_labels.stop_gradient = True
+    def __call__(self, cls_logits, bbox_pred, anchor_box, gt_boxes):
+        batch_size = gt_boxes.shape[0]
+        tgt_labels, tgt_bboxes, tgt_deltas = generate_rpn_anchor_target(
+            anchor_box, gt_boxes, self.batch_size_per_im, self.positive_overlap,
+            self.negative_overlap, self.fg_fraction, self.use_random,
+            batch_size)
 
         cls_logits = paddle.reshape(x=cls_logits, shape=(-1, ))
         bbox_pred = paddle.reshape(x=bbox_pred, shape=(-1, 4))
-        pred_cls_logits = paddle.gather(cls_logits, score_indexes)
-        pred_bbox_pred = paddle.gather(bbox_pred, loc_indexes)
+        norm = self.batch_size_per_im * batch_size
 
-        return pred_cls_logits, pred_bbox_pred, tgt_labels, tgt_bboxes, bbox_inside_weights
+        return cls_logits, bbox_pred, tgt_labels, tgt_bboxes, tgt_deltas, norm
 
 
 @register
@@ -173,7 +198,8 @@ class ProposalGenerator(object):
                  infer_post_nms_top_n=1000,
                  nms_thresh=.5,
                  min_size=.1,
-                 eta=1.):
+                 eta=1.,
+                 topk_after_collect=False):
         super(ProposalGenerator, self).__init__()
         self.train_pre_nms_top_n = train_pre_nms_top_n
         self.train_post_nms_top_n = train_post_nms_top_n
@@ -182,131 +208,87 @@ class ProposalGenerator(object):
         self.nms_thresh = nms_thresh
         self.min_size = min_size
         self.eta = eta
+        self.topk_after_collect = topk_after_collect
 
-    def __call__(self,
-                 scores,
-                 bbox_deltas,
-                 anchors,
-                 variances,
-                 im_shape,
-                 mode='train'):
+    def __call__(self, scores, bbox_deltas, anchors, im_shape, mode='train'):
         pre_nms_top_n = self.train_pre_nms_top_n if mode == 'train' else self.infer_pre_nms_top_n
-        post_nms_top_n = self.train_post_nms_top_n if mode == 'train' else self.infer_post_nms_top_n
-        # TODO delete im_info
-        if im_shape.shape[1] > 2:
-            import paddle.fluid as fluid
-            rpn_rois, rpn_rois_prob, rpn_rois_num = fluid.layers.generate_proposals(
-                scores,
-                bbox_deltas,
-                im_shape,
-                anchors,
-                variances,
-                pre_nms_top_n=pre_nms_top_n,
-                post_nms_top_n=post_nms_top_n,
-                nms_thresh=self.nms_thresh,
-                min_size=self.min_size,
-                eta=self.eta,
-                return_rois_num=True)
+        if self.topk_after_collect and mode == 'train':
+            post_nms_top_n = self.train_pre_nms_top_n
         else:
-            rpn_rois, rpn_rois_prob, rpn_rois_num = ops.generate_proposals(
-                scores,
-                bbox_deltas,
-                im_shape,
-                anchors,
-                variances,
-                pre_nms_top_n=pre_nms_top_n,
-                post_nms_top_n=post_nms_top_n,
-                nms_thresh=self.nms_thresh,
-                min_size=self.min_size,
-                eta=self.eta,
-                return_rois_num=True)
-        return rpn_rois, rpn_rois_prob, rpn_rois_num, post_nms_top_n
+            post_nms_top_n = self.train_post_nms_top_n if mode == 'train' else self.infer_post_nms_top_n
+        variances = paddle.ones_like(anchors)
+        rpn_rois, rpn_rois_prob, rpn_rois_num = ops.generate_proposals(
+            scores,
+            bbox_deltas,
+            im_shape,
+            anchors,
+            variances,
+            pre_nms_top_n=pre_nms_top_n,
+            post_nms_top_n=post_nms_top_n,
+            nms_thresh=self.nms_thresh,
+            min_size=self.min_size,
+            eta=self.eta,
+            return_rois_num=True)
+        top_n = self.train_post_nms_top_n if mode == 'train' else self.infer_post_nms_top_n
+        return rpn_rois, rpn_rois_prob, rpn_rois_num, top_n
 
 
 @register
 @serializable
 class ProposalTargetGenerator(object):
-    __shared__ = ['num_classes']
+    #__shared__ = ['num_classes']
 
-    def __init__(self,
-                 batch_size_per_im=512,
-                 fg_fraction=.25,
-                 fg_thresh=[.5, ],
-                 bg_thresh_hi=[.5, ],
-                 bg_thresh_lo=[0., ],
-                 bbox_reg_weights=[0.1, 0.1, 0.2, 0.2],
-                 num_classes=81,
-                 use_random=True,
-                 is_cls_agnostic=False):
+    def __init__(
+            self,
+            batch_size_per_im=512,
+            fg_fraction=.25,
+            fg_thresh=[.5, ],
+            bg_thresh_hi=[.5, ],
+            #bg_thresh_lo=[0., ],
+            #bbox_reg_weights=[0.1, 0.1, 0.2, 0.2],
+            #num_classes=81,
+            use_random=True,
+            is_cls_agnostic=False):
         super(ProposalTargetGenerator, self).__init__()
         self.batch_size_per_im = batch_size_per_im
         self.fg_fraction = fg_fraction
         self.fg_thresh = fg_thresh
         self.bg_thresh_hi = bg_thresh_hi
-        self.bg_thresh_lo = bg_thresh_lo
-        self.bbox_reg_weights = bbox_reg_weights
-        self.num_classes = num_classes
+        #self.bg_thresh_lo = bg_thresh_lo
+        #self.bbox_reg_weights = bbox_reg_weights
+        #self.num_classes = num_classes
         self.use_random = use_random
-        self.is_cls_agnostic = is_cls_agnostic
 
     def __call__(self,
                  rpn_rois,
-                 rpn_rois_num,
                  gt_classes,
-                 is_crowd,
                  gt_boxes,
-                 im_info,
                  stage=0,
                  max_overlap=None):
-        rpn_rois = rpn_rois.numpy()
-        rpn_rois_num = rpn_rois_num.numpy()
-        gt_classes = gt_classes.numpy()
-        gt_boxes = gt_boxes.numpy()
-        is_crowd = is_crowd.numpy()
-        im_info = im_info.numpy()
-        max_overlap = max_overlap if max_overlap is None else max_overlap.numpy(
-        )
-        reg_weights = [i / (stage + 1) for i in self.bbox_reg_weights]
+        max_overlap = max_overlap if max_overlap is None else max_overlap
+        #reg_weights = [i / (stage + 1) for i in self.bbox_reg_weights]
         is_cascade = True if stage > 0 else False
-        num_classes = 2 if is_cascade else self.num_classes
+        #num_classes = 2 if is_cascade else self.num_classes
         outs = generate_proposal_target(
-            rpn_rois, rpn_rois_num, gt_classes, is_crowd, gt_boxes, im_info,
-            self.batch_size_per_im, self.fg_fraction, self.fg_thresh[stage],
-            self.bg_thresh_hi[stage], self.bg_thresh_lo[stage], reg_weights,
-            num_classes, self.use_random, self.is_cls_agnostic, is_cascade,
-            max_overlap)
-        outs = [to_tensor(v) for v in outs]
-        for v in outs:
-            v.stop_gradient = True
+            rpn_rois, gt_classes, gt_boxes, self.batch_size_per_im,
+            self.fg_fraction, self.fg_thresh[stage], self.bg_thresh_hi[stage],
+            self.use_random, is_cascade, max_overlap)
         return outs
 
 
 @register
 @serializable
 class MaskTargetGenerator(object):
-    __shared__ = ['num_classes', 'mask_resolution']
+    __shared__ = ['mask_resolution']
 
-    def __init__(self, num_classes=81, mask_resolution=14):
+    def __init__(self, mask_resolution=14):
         super(MaskTargetGenerator, self).__init__()
-        self.num_classes = num_classes
         self.mask_resolution = mask_resolution
 
-    def __call__(self, im_info, gt_classes, is_crowd, gt_segms, rois, rois_num,
-                 labels_int32):
-        im_info = im_info.numpy()
-        gt_classes = gt_classes.numpy()
-        is_crowd = is_crowd.numpy()
-        gt_segms = gt_segms.numpy()
-        rois = rois.numpy()
-        rois_num = rois_num.numpy()
-        labels_int32 = labels_int32.numpy()
-        outs = generate_mask_target(im_info, gt_classes, is_crowd, gt_segms,
-                                    rois, rois_num, labels_int32,
-                                    self.num_classes, self.mask_resolution)
+    def __call__(self, gt_segms, rois, rois_num, labels_int32, sampled_gt_inds):
+        outs = generate_mask_target(gt_segms, rois, rois_num, labels_int32,
+                                    sampled_gt_inds, self.mask_resolution)
 
-        outs = [to_tensor(v) for v in outs]
-        for v in outs:
-            v.stop_gradient = True
         return outs
 
 

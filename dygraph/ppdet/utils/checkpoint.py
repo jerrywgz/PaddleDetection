@@ -108,6 +108,11 @@ def load_pretrain_weight(model,
                          pretrain_weight,
                          load_static_weights=False,
                          weight_type='pretrain'):
+
+    #param_state_dict = paddle.load('detectron2paddle.pdparams')
+    #model.set_dict(param_state_dict)
+    #return
+
     assert weight_type in ['pretrain', 'finetune']
     if is_url(pretrain_weight):
         pretrain_weight = get_weight_path(pretrain_weight)

@@ -122,7 +122,7 @@ class DecodeOp(BaseOperator):
         data = np.frombuffer(im, dtype='uint8')
         im = cv2.imdecode(data, 1)  # BGR mode, but need RGB mode
 
-        im = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
+        #im = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
 
         sample['image'] = im
         if 'h' not in sample:
@@ -262,8 +262,8 @@ class NormalizeImageOp(BaseOperator):
         """
         im = sample['image']
         im = im.astype(np.float32, copy=False)
-        mean = np.array(self.mean)[np.newaxis, np.newaxis, :]
-        std = np.array(self.std)[np.newaxis, np.newaxis, :]
+        mean = np.array(self.mean)[:, np.newaxis, np.newaxis]
+        std = np.array(self.std)[:, np.newaxis, np.newaxis]
 
         if self.is_scale:
             im = im / 255.0
@@ -500,7 +500,7 @@ class RandomFlipOp(BaseOperator):
     def apply_segm(self, segms, height, width):
         def _flip_poly(poly, width):
             flipped_poly = np.array(poly)
-            flipped_poly[0::2] = width - np.array(poly[0::2]) - 1
+            flipped_poly[0::2] = width - np.array(poly[0::2])  #- 1
             return flipped_poly.tolist()
 
         def _flip_rle(rle, height, width):
@@ -535,8 +535,8 @@ class RandomFlipOp(BaseOperator):
     def apply_bbox(self, bbox, width):
         oldx1 = bbox[:, 0].copy()
         oldx2 = bbox[:, 2].copy()
-        bbox[:, 0] = width - oldx2 - 1
-        bbox[:, 2] = width - oldx1 - 1
+        bbox[:, 0] = width - oldx2  #- 1
+        bbox[:, 2] = width - oldx1  #- 1
         return bbox
 
     def apply(self, sample, context=None):
@@ -601,6 +601,14 @@ class ResizeOp(BaseOperator):
 
     def apply_image(self, image, scale):
         im_scale_x, im_scale_y = scale
+        im_h = float(image.shape[0])
+        im_w = float(image.shape[1])
+        resize_h = int(im_h * im_scale_y)
+        resize_w = int(im_w * im_scale_x)
+        from PIL import Image
+        pil_image = Image.fromarray(image)
+        pil_image = pil_image.resize((resize_w, resize_h), self.interp)
+        return np.array(pil_image)
         return cv2.resize(
             image,
             None,
@@ -614,8 +622,8 @@ class ResizeOp(BaseOperator):
         resize_w, resize_h = size
         bbox[:, 0::2] *= im_scale_x
         bbox[:, 1::2] *= im_scale_y
-        bbox[:, 0::2] = np.clip(bbox[:, 0::2], 0, resize_w - 1)
-        bbox[:, 1::2] = np.clip(bbox[:, 1::2], 0, resize_h - 1)
+        bbox[:, 0::2] = np.clip(bbox[:, 0::2], 0, resize_w)  # - 1)
+        bbox[:, 1::2] = np.clip(bbox[:, 1::2], 0, resize_h)  # - 1)
         return bbox
 
     def apply_segm(self, segms, im_size, scale):

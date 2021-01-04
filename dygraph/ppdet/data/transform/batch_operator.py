@@ -140,7 +140,6 @@ class PadBatchOp(BaseOperator):
                 data['gt_bbox'] = gt_box_data
                 data['gt_class'] = gt_class_data
                 data['is_crowd'] = is_crowd_data
-
         return samples
 
 

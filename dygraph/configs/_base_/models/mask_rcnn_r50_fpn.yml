@@ -35,10 +35,6 @@ FPN:
   spatial_scale: [0.25, 0.125, 0.0625, 0.03125]
 
 RPNHead:
-  rpn_feat:
-    name: RPNFeat
-    feat_in: 256
-    feat_out: 256
   anchor_per_position: 3
   rpn_channel: 256
 
@@ -46,15 +42,15 @@ Anchor:
   anchor_generator:
     name: AnchorGeneratorRPN
     aspect_ratios: [0.5, 1.0, 2.0]
-    anchor_start_size: 32
-    stride: [4., 4.]
+    anchor_sizes: [[32], [64], [128], [256], [512]]
+    strides: [4, 8, 16, 32, 64]
   anchor_target_generator:
     name: AnchorTargetGeneratorRPN
     batch_size_per_im: 256
     fg_fraction: 0.5
     negative_overlap: 0.3
     positive_overlap: 0.7
-    straddle_thresh: 0.0
+    use_random: True #False
 
 Proposal:
   proposal_generator:
@@ -62,17 +58,22 @@ Proposal:
     min_size: 0.0
     nms_thresh: 0.7
     train_pre_nms_top_n: 2000
-    train_post_nms_top_n: 2000
+    train_post_nms_top_n: 1000
     infer_pre_nms_top_n: 1000
     infer_post_nms_top_n: 1000
+    topk_after_collect: True
+  nms_threshold: 0.7
+  train_pre_nms_top_n: 2000
+  train_post_nms_top_n: 1000
+  infer_pre_nms_top_n: 1000
+  infer_post_nms_top_n: 1000
   proposal_target_generator:
     name: ProposalTargetGenerator
     batch_size_per_im: 512
-    bbox_reg_weights: [0.1, 0.1, 0.2, 0.2]
     bg_thresh_hi: [0.5,]
-    bg_thresh_lo: [0.0,]
     fg_thresh: [0.5,]
     fg_fraction: 0.25
+    use_random: True #False
 
 BBoxHead:
   bbox_feat:
@@ -80,7 +81,8 @@ BBoxHead:
     roi_extractor:
       name: RoIAlign
       resolution: 7
-      sampling_ratio: 2
+      sampling_ratio: 0
+      aligned: True
     head_feat:
       name: TwoFCHead
       in_dim: 256
@@ -112,7 +114,8 @@ MaskHead:
     mask_roi_extractor:
       name: RoIAlign
       resolution: 14
-      sampling_ratio: 2
+      sampling_ratio: 0
+      aligned: True
     share_bbox_feat: False
   feat_in: 256
 

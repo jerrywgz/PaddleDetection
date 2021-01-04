@@ -25,36 +25,16 @@ from ppdet.modeling import ops
 
 
 @register
-class RPNFeat(nn.Layer):
-    def __init__(self, feat_in=1024, feat_out=1024):
-        super(RPNFeat, self).__init__()
-        # rpn feat is shared with each level
+class RPNHead(nn.Layer):
+    def __init__(self, anchor_per_position=15, rpn_channel=1024):
+        super(RPNHead, self).__init__()
         self.rpn_conv = Conv2D(
-            in_channels=feat_in,
-            out_channels=feat_out,
+            in_channels=rpn_channel,
+            out_channels=rpn_channel,
             kernel_size=3,
             padding=1,
             weight_attr=ParamAttr(initializer=Normal(
-                mean=0., std=0.01)),
-            bias_attr=ParamAttr(
-                learning_rate=2., regularizer=L2Decay(0.)))
-
-    def forward(self, inputs, feats):
-        rpn_feats = []
-        for feat in feats:
-            rpn_feats.append(F.relu(self.rpn_conv(feat)))
-        return rpn_feats
-
-
-@register
-class RPNHead(nn.Layer):
-    __inject__ = ['rpn_feat']
-
-    def __init__(self, rpn_feat, anchor_per_position=15, rpn_channel=1024):
-        super(RPNHead, self).__init__()
-        self.rpn_feat = rpn_feat
-        if isinstance(rpn_feat, dict):
-            self.rpn_feat = RPNFeat(**rpn_feat)
+                mean=0., std=0.01)))
         # rpn head is shared with each level
         # rpn roi classification scores
         self.rpn_rois_score = Conv2D(
@@ -63,9 +43,7 @@ class RPNHead(nn.Layer):
             kernel_size=1,
             padding=0,
             weight_attr=ParamAttr(initializer=Normal(
-                mean=0., std=0.01)),
-            bias_attr=ParamAttr(
-                learning_rate=2., regularizer=L2Decay(0.)))
+                mean=0., std=0.01)))
 
         # rpn roi bbox regression deltas
         self.rpn_rois_delta = Conv2D(
@@ -74,42 +52,44 @@ class RPNHead(nn.Layer):
             kernel_size=1,
             padding=0,
             weight_attr=ParamAttr(initializer=Normal(
-                mean=0., std=0.01)),
-            bias_attr=ParamAttr(
-                learning_rate=2., regularizer=L2Decay(0.)))
+                mean=0., std=0.01)))
 
-    def forward(self, inputs, feats):
-        rpn_feats = self.rpn_feat(inputs, feats)
-        rpn_head_out = []
-        for rpn_feat in rpn_feats:
+    def forward(self, feats):
+        rpn_feats = []
+        rpn_rois_score = []
+        rpn_rois_delta = []
+        for feat in feats:
+            rpn_feat = F.relu(self.rpn_conv(feat))
             rrs = self.rpn_rois_score(rpn_feat)
             rrd = self.rpn_rois_delta(rpn_feat)
-            rpn_head_out.append((rrs, rrd))
-        return rpn_feats, rpn_head_out
+            rpn_rois_score.append(rrs)
+            rpn_rois_delta.append(rrd)
+        return rpn_rois_score, rpn_rois_delta
 
     def get_loss(self, loss_inputs):
         # cls loss
-        score_tgt = paddle.cast(
-            x=loss_inputs['rpn_score_target'], dtype='float32')
+        score_tgt = paddle.concat(x=loss_inputs['rpn_score_target'])
         score_tgt.stop_gradient = True
-        loss_rpn_cls = ops.sigmoid_cross_entropy_with_logits(
-            input=loss_inputs['rpn_score_pred'], label=score_tgt)
-        loss_rpn_cls = paddle.mean(loss_rpn_cls, name='loss_rpn_cls')
+
+        pos_mask = score_tgt == 1
+        pos_ind = paddle.nonzero(pos_mask)
+
+        valid_mask = score_tgt >= 0
+        valid_ind = paddle.nonzero(valid_mask)
+
+        # cls loss
+        score_pred = paddle.gather(loss_inputs['rpn_score_pred'], valid_ind)
+        score_label = paddle.gather(score_tgt, valid_ind).cast('float32')
+        loss_rpn_cls = F.binary_cross_entropy_with_logits(
+            logit=score_pred, label=score_label, reduction="sum")
 
         # reg loss
-        loc_tgt = paddle.cast(x=loss_inputs['rpn_rois_target'], dtype='float32')
-        loc_tgt.stop_gradient = True
-        loss_rpn_reg = ops.smooth_l1(
-            input=loss_inputs['rpn_rois_pred'],
-            label=loc_tgt,
-            inside_weight=loss_inputs['rpn_rois_weight'],
-            outside_weight=loss_inputs['rpn_rois_weight'],
-            sigma=3.0, )
-        loss_rpn_reg = paddle.sum(loss_rpn_reg)
-        score_shape = paddle.shape(score_tgt)
-        score_shape = paddle.cast(score_shape, dtype='float32')
-        norm = paddle.prod(score_shape)
-        norm.stop_gradient = True
-        loss_rpn_reg = loss_rpn_reg / norm
-
-        return {'loss_rpn_cls': loss_rpn_cls, 'loss_rpn_reg': loss_rpn_reg}
+        loc_pred = paddle.gather(loss_inputs['rpn_rois_pred'], pos_ind)
+        loc_tgt = paddle.concat(x=loss_inputs['rpn_rois_target'])
+        loc_tgt = paddle.gather(loc_tgt, pos_ind)
+        loss_rpn_reg = paddle.abs(loc_pred - loc_tgt).sum()
+        norm = loss_inputs['norm']
+        return {
+            'loss_rpn_cls': loss_rpn_cls / norm,
+            'loss_rpn_reg': loss_rpn_reg / norm
+        }

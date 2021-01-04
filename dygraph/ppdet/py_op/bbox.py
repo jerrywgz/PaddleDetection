@@ -1,68 +1,65 @@
 import numpy as np
 from numba import jit
+import math
+import paddle
 
 
-@jit
-def bbox2delta(bboxes1, bboxes2, weights):
-    ex_w = bboxes1[:, 2] - bboxes1[:, 0] + 1
-    ex_h = bboxes1[:, 3] - bboxes1[:, 1] + 1
-    ex_ctr_x = bboxes1[:, 0] + 0.5 * ex_w
-    ex_ctr_y = bboxes1[:, 1] + 0.5 * ex_h
+def bbox2delta(src_boxes, tgt_boxes, weights):
+    src_w = src_boxes[:, 2] - src_boxes[:, 0]
+    src_h = src_boxes[:, 3] - src_boxes[:, 1]
+    src_ctr_x = src_boxes[:, 0] + 0.5 * src_w
+    src_ctr_y = src_boxes[:, 1] + 0.5 * src_h
 
-    gt_w = bboxes2[:, 2] - bboxes2[:, 0] + 1
-    gt_h = bboxes2[:, 3] - bboxes2[:, 1] + 1
-    gt_ctr_x = bboxes2[:, 0] + 0.5 * gt_w
-    gt_ctr_y = bboxes2[:, 1] + 0.5 * gt_h
+    tgt_w = tgt_boxes[:, 2] - tgt_boxes[:, 0]
+    tgt_h = tgt_boxes[:, 3] - tgt_boxes[:, 1]
+    tgt_ctr_x = tgt_boxes[:, 0] + 0.5 * tgt_w
+    tgt_ctr_y = tgt_boxes[:, 1] + 0.5 * tgt_h
 
-    dx = (gt_ctr_x - ex_ctr_x) / ex_w / weights[0]
-    dy = (gt_ctr_y - ex_ctr_y) / ex_h / weights[1]
-    dw = (np.log(gt_w / ex_w)) / weights[2]
-    dh = (np.log(gt_h / ex_h)) / weights[3]
+    wx, wy, ww, wh = weights
+    dx = wx * (tgt_ctr_x - src_ctr_x) / src_w
+    dy = wy * (tgt_ctr_y - src_ctr_y) / src_h
+    dw = ww * paddle.log(tgt_w / src_w)
+    dh = wh * paddle.log(tgt_h / src_h)
 
-    deltas = np.vstack([dx, dy, dw, dh]).transpose()
+    deltas = paddle.stack((dx, dy, dw, dh), axis=1)
     return deltas
 
 
-@jit
-def delta2bbox(deltas, boxes, weights, bbox_clip=4.13):
+def delta2bbox(deltas, boxes, weights):
+    clip_scale = math.log(1000.0 / 16)
     if boxes.shape[0] == 0:
-        return np.zeros((0, deltas.shape[1]), dtype=deltas.dtype)
-    boxes = boxes.astype(deltas.dtype, copy=False)
+        return paddle.zeros((0, deltas.shape[1]), dtype='float32')
 
-    widths = boxes[:, 2] - boxes[:, 0] + 1.0
-    heights = boxes[:, 3] - boxes[:, 1] + 1.0
+    widths = boxes[:, 2] - boxes[:, 0]
+    heights = boxes[:, 3] - boxes[:, 1]
     ctr_x = boxes[:, 0] + 0.5 * widths
     ctr_y = boxes[:, 1] + 0.5 * heights
 
     wx, wy, ww, wh = weights
-    dx = deltas[:, 0::4] * wx
-    dy = deltas[:, 1::4] * wy
-    dw = deltas[:, 2::4] * ww
-    dh = deltas[:, 3::4] * wh
-
+    dx, dy, dw, dh = paddle.tensor.split(deltas, 4, axis=1)
+    dx = dx * wx
+    dy = dy * wy
+    dw = dw * ww
+    dh = dh * wh
     # Prevent sending too large values into np.exp()
-    dw = np.minimum(dw, bbox_clip)
-    dh = np.minimum(dh, bbox_clip)
+    dw = paddle.clip(dw, max=clip_scale)
+    dh = paddle.clip(dh, max=clip_scale)
 
-    pred_ctr_x = dx * widths[:, np.newaxis] + ctr_x[:, np.newaxis]
-    pred_ctr_y = dy * heights[:, np.newaxis] + ctr_y[:, np.newaxis]
-    pred_w = np.exp(dw) * widths[:, np.newaxis]
-    pred_h = np.exp(dh) * heights[:, np.newaxis]
+    pred_ctr_x = dx * widths.unsqueeze(1) + ctr_x.unsqueeze(1)
+    pred_ctr_y = dy * heights.unsqueeze(1) + ctr_y.unsqueeze(1)
+    pred_w = paddle.exp(dw) * widths.unsqueeze(1)
+    pred_h = paddle.exp(dh) * heights.unsqueeze(1)
 
-    pred_boxes = np.zeros(deltas.shape, dtype=deltas.dtype)
-    # x1
-    pred_boxes[:, 0::4] = pred_ctr_x - 0.5 * pred_w
-    # y1
-    pred_boxes[:, 1::4] = pred_ctr_y - 0.5 * pred_h
-    # x2 (note: "- 1" is correct; don't be fooled by the asymmetry)
-    pred_boxes[:, 2::4] = pred_ctr_x + 0.5 * pred_w - 1
-    # y2 (note: "- 1" is correct; don't be fooled by the asymmetry)
-    pred_boxes[:, 3::4] = pred_ctr_y + 0.5 * pred_h - 1
+    x1 = pred_ctr_x - 0.5 * pred_w
+    y1 = pred_ctr_y - 0.5 * pred_h
+    x2 = pred_ctr_x + 0.5 * pred_w
+    y2 = pred_ctr_y + 0.5 * pred_h
+
+    pred_boxes = paddle.concat([x1, y1, x2, y2], axis=1)
 
     return pred_boxes
 
 
-@jit
 def expand_bbox(bboxes, scale):
     w_half = (bboxes[:, 2] - bboxes[:, 0]) * .5
     h_half = (bboxes[:, 3] - bboxes[:, 1]) * .5
@@ -81,46 +78,44 @@ def expand_bbox(bboxes, scale):
     return bboxes_exp
 
 
-@jit
 def clip_bbox(boxes, im_shape):
-    assert boxes.shape[1] % 4 == 0, \
-        'boxes.shape[1] is {:d}, but must be divisible by 4.'.format(
-        boxes.shape[1]
-    )
-    # x1 >= 0
-    boxes[:, 0::4] = np.maximum(np.minimum(boxes[:, 0::4], im_shape[1] - 1), 0)
-    # y1 >= 0
-    boxes[:, 1::4] = np.maximum(np.minimum(boxes[:, 1::4], im_shape[0] - 1), 0)
-    # x2 < im_shape[1]
-    boxes[:, 2::4] = np.maximum(np.minimum(boxes[:, 2::4], im_shape[1] - 1), 0)
-    # y2 < im_shape[0]
-    boxes[:, 3::4] = np.maximum(np.minimum(boxes[:, 3::4], im_shape[0] - 1), 0)
-    return boxes
+    h, w = im_shape
+    x1 = boxes[:, 0].clip(0, w)
+    y1 = boxes[:, 1].clip(0, h)
+    x2 = boxes[:, 2].clip(0, w)
+    y2 = boxes[:, 3].clip(0, h)
+    return paddle.stack([x1, y1, x2, y2], axis=1)
 
 
-@jit
-def bbox_overlaps(bboxes1, bboxes2):
-    w1 = np.maximum(bboxes1[:, 2] - bboxes1[:, 0] + 1, 0)
-    h1 = np.maximum(bboxes1[:, 3] - bboxes1[:, 1] + 1, 0)
-    w2 = np.maximum(bboxes2[:, 2] - bboxes2[:, 0] + 1, 0)
-    h2 = np.maximum(bboxes2[:, 3] - bboxes2[:, 1] + 1, 0)
-    area1 = w1 * h1
-    area2 = w2 * h2
+def nonempty_bbox(boxes, min_size):
+    w = boxes[:, 2] - boxes[:, 0]
+    h = boxes[:, 3] - boxes[:, 1]
+    mask = paddle.logical_and(w > min_size, w > min_size)
+    keep = paddle.nonzero(mask).squeeze()
+    return keep
 
-    boxes1_x1, boxes1_y1, boxes1_x2, boxes1_y2 = np.split(bboxes1, 4, axis=1)
-    boxes2_x1, boxes2_y1, boxes2_x2, boxes2_y2 = np.split(bboxes2, 4, axis=1)
 
-    all_pairs_min_ymax = np.minimum(boxes1_y2, np.transpose(boxes2_y2))
-    all_pairs_max_ymin = np.maximum(boxes1_y1, np.transpose(boxes2_y1))
-    inter_h = np.maximum(all_pairs_min_ymax - all_pairs_max_ymin + 1, 0.)
-    all_pairs_min_xmax = np.minimum(boxes1_x2, np.transpose(boxes2_x2))
-    all_pairs_max_xmin = np.maximum(boxes1_x1, np.transpose(boxes2_x1))
-    inter_w = np.maximum(all_pairs_min_xmax - all_pairs_max_xmin + 1, 0.)
+def bbox_area(boxes):
+    return (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])
 
-    inter_area = inter_w * inter_h
 
-    union_area = np.expand_dims(area1, 1) + np.expand_dims(area2, 0)
-    overlaps = inter_area / (union_area - inter_area)
+def bbox_overlaps(boxes1, boxes2):
+    area1 = bbox_area(boxes1)
+    area2 = bbox_area(boxes2)
+
+    xy_max = paddle.minimum(
+        paddle.unsqueeze(boxes1, 1)[:, :, 2:], boxes2[:, 2:])
+    xy_min = paddle.maximum(
+        paddle.unsqueeze(boxes1, 1)[:, :, :2], boxes2[:, :2])
+    width_height = xy_max - xy_min
+    width_height = width_height.clip(min=0)
+    inter = width_height.prod(axis=2)
+
+    overlaps = paddle.where(
+        inter > 0,
+        inter / (paddle.unsqueeze(area1, 1) + area2 - inter),
+        paddle.zeros(
+            [1], dtype='float32'), )
     return overlaps
 
 
@@ -228,7 +223,7 @@ def nms_with_decode(bboxes,
     return new_bboxes_num, im_results
 
 
-@jit
+#@jit
 def compute_bbox_targets(bboxes1, bboxes2, labels, bbox_reg_weights):
     assert bboxes1.shape[0] == bboxes2.shape[0]
     assert bboxes1.shape[1] == 4

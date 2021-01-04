@@ -21,6 +21,7 @@ from paddle.nn.initializer import Normal, XavierUniform
 from paddle.regularizer import L2Decay
 from ppdet.core.workspace import register
 from ppdet.modeling import ops
+from ppdet.py_op.bbox import bbox2delta
 
 
 @register
@@ -49,9 +50,7 @@ class TwoFCHead(nn.Layer):
                     mlp_dim,
                     weight_attr=ParamAttr(
                         learning_rate=lr_factor,
-                        initializer=XavierUniform(fan_out=fan)),
-                    bias_attr=ParamAttr(
-                        learning_rate=2. * lr_factor, regularizer=L2Decay(0.))))
+                        initializer=XavierUniform(fan_out=fan))))
             fc6_relu = self.add_sublayer(fc6_name + 'act', ReLU())
             fc7 = self.add_sublayer(
                 fc7_name,
@@ -59,9 +58,7 @@ class TwoFCHead(nn.Layer):
                     mlp_dim,
                     mlp_dim,
                     weight_attr=ParamAttr(
-                        learning_rate=lr_factor, initializer=XavierUniform()),
-                    bias_attr=ParamAttr(
-                        learning_rate=2. * lr_factor, regularizer=L2Decay(0.))))
+                        learning_rate=lr_factor, initializer=XavierUniform())))
             fc7_relu = self.add_sublayer(fc7_name + 'act', ReLU())
             self.fc6_list.append(fc6)
             self.fc6_relu_list.append(fc6_relu)
@@ -106,11 +103,12 @@ class BBoxHead(nn.Layer):
                  roi_stages=1,
                  with_pool=False,
                  score_stage=[0, 1, 2],
+                 bbox_weight=[10., 10., 5., 5.],
                  delta_stage=[2]):
         super(BBoxHead, self).__init__()
         self.num_classes = num_classes
         self.cls_agnostic = cls_agnostic
-        self.delta_dim = 2 if cls_agnostic else num_classes
+        self.delta_dim = 2 if cls_agnostic else num_classes - 1
         self.bbox_feat = bbox_feat
         self.roi_stages = roi_stages
         self.bbox_score_list = []
@@ -118,6 +116,7 @@ class BBoxHead(nn.Layer):
         self.roi_feat_list = [[] for i in range(roi_stages)]
         self.with_pool = with_pool
         self.score_stage = score_stage
+        self.bbox_weight = bbox_weight
         self.delta_stage = delta_stage
         for stage in range(roi_stages):
             score_name = 'bbox_score_{}'.format(stage)
@@ -131,9 +130,7 @@ class BBoxHead(nn.Layer):
                     weight_attr=ParamAttr(
                         learning_rate=lr_factor,
                         initializer=Normal(
-                            mean=0.0, std=0.01)),
-                    bias_attr=ParamAttr(
-                        learning_rate=2. * lr_factor, regularizer=L2Decay(0.))))
+                            mean=0.0, std=0.01))))
 
             bbox_delta = self.add_sublayer(
                 delta_name,
@@ -143,9 +140,7 @@ class BBoxHead(nn.Layer):
                     weight_attr=ParamAttr(
                         learning_rate=lr_factor,
                         initializer=Normal(
-                            mean=0.0, std=0.001)),
-                    bias_attr=ParamAttr(
-                        learning_rate=2. * lr_factor, regularizer=L2Decay(0.))))
+                            mean=0.0, std=0.001))))
             self.bbox_score_list.append(bbox_score)
             self.bbox_delta_list.append(bbox_delta)
 
@@ -173,24 +168,52 @@ class BBoxHead(nn.Layer):
         bbox_head_out = (scores, deltas)
         return bbox_feat, bbox_head_out, self.bbox_feat.head_feat
 
-    def _get_head_loss(self, score, delta, target):
+    def _get_head_loss(self, score, delta, target, rois):
         # bbox cls  
-        labels_int64 = paddle.cast(x=target['labels_int32'], dtype='int64')
+        labels_int32 = target['labels_int32']
+        labels_int32 = paddle.concat(labels_int32) if len(
+            labels_int32) > 1 else labels_int32[0]
+        label_mask = paddle.cast(labels_int32 == 0, 'int32')
+        labels_int32 = labels_int32 + label_mask * 81
+        labels_int32 = labels_int32 - 1
+        labels_int64 = labels_int32.cast('int64')
         labels_int64.stop_gradient = True
-        loss_bbox_cls = F.softmax_with_cross_entropy(
-            logits=score, label=labels_int64)
-        loss_bbox_cls = paddle.mean(loss_bbox_cls)
+        loss_bbox_cls = F.cross_entropy(
+            input=score, label=labels_int64, reduction='mean')
         # bbox reg
-        loss_bbox_reg = ops.smooth_l1(
-            input=delta,
-            label=target['bbox_targets'],
-            inside_weight=target['bbox_inside_weights'],
-            outside_weight=target['bbox_outside_weights'],
-            sigma=1.0)
-        loss_bbox_reg = paddle.mean(loss_bbox_reg)
-        return loss_bbox_cls, loss_bbox_reg
 
-    def get_loss(self, bbox_head_out, targets):
+        cls_agnostic_bbox_reg = delta.shape[1] == 4
+
+        fg_inds = paddle.nonzero(
+            paddle.logical_and(labels_int64 >= 0, labels_int64 < 80)).reshape(
+                [-1])
+        if cls_agnostic_bbox_reg:
+            reg_delta = paddle.gather(delta, fg_inds)
+        else:
+            fg_gt_classes = paddle.gather(labels_int64, fg_inds)
+
+            reg_row_inds = paddle.arange(fg_gt_classes.shape[0]).unsqueeze(1)
+            reg_row_inds = paddle.tile(reg_row_inds, [1, 4]).reshape([-1, 1])
+            reg_col_inds = 4 * fg_gt_classes.unsqueeze(1) + paddle.arange(4)
+            reg_col_inds = reg_col_inds.reshape([-1, 1])
+            reg_inds = paddle.concat([reg_row_inds, reg_col_inds], axis=1)
+
+            reg_delta = paddle.gather(delta, fg_inds)
+            reg_delta = paddle.gather_nd(reg_delta, reg_inds).reshape([-1, 4])
+        rois = paddle.concat(rois) if len(rois) > 1 else rois[0]
+        bbox_targets = target['bbox_targets']
+        bbox_targets = paddle.concat(bbox_targets) if len(
+            bbox_targets) > 1 else bbox_targets[0]
+
+        reg_target = bbox2delta(rois, bbox_targets, self.bbox_weight)
+        reg_target = paddle.gather(reg_target, fg_inds)
+
+        loss_box_reg = paddle.abs(reg_delta - reg_target).sum(
+        ) / labels_int64.shape[0]
+        return loss_bbox_cls, loss_box_reg
+
+    def get_loss(self, bbox_head_out, targets, rois):
+        roi, rois_num = rois
         loss_bbox = {}
         cls_name = 'loss_bbox_cls'
         reg_name = 'loss_bbox_reg'
@@ -200,7 +223,7 @@ class BBoxHead(nn.Layer):
                 cls_name = 'loss_bbox_cls_{}'.format(lvl)
                 reg_name = 'loss_bbox_reg_{}'.format(lvl)
             loss_bbox_cls, loss_bbox_reg = self._get_head_loss(score, delta,
-                                                               target)
+                                                               target, roi)
             loss_weight = 1. / 2**lvl
             loss_bbox[cls_name] = loss_bbox_cls * loss_weight
             loss_bbox[reg_name] = loss_bbox_reg * loss_weight

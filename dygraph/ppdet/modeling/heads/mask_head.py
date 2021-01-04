@@ -57,9 +57,7 @@ class MaskFeat(Layer):
                         kernel_size=3,
                         padding=1,
                         weight_attr=ParamAttr(
-                            initializer=KaimingNormal(fan_in=fan_conv)),
-                        bias_attr=ParamAttr(
-                            learning_rate=2., regularizer=L2Decay(0.))))
+                            initializer=KaimingNormal(fan_in=fan_conv))))
                 mask_conv.add_sublayer(conv_name + 'act', ReLU())
             mask_conv.add_sublayer(
                 'conv5_mask',
@@ -69,9 +67,7 @@ class MaskFeat(Layer):
                     kernel_size=2,
                     stride=2,
                     weight_attr=ParamAttr(
-                        initializer=KaimingNormal(fan_in=fan_deconv)),
-                    bias_attr=ParamAttr(
-                        learning_rate=2., regularizer=L2Decay(0.))))
+                        initializer=KaimingNormal(fan_in=fan_deconv))))
             mask_conv.add_sublayer('conv5_mask' + 'act', ReLU())
             upsample = self.add_sublayer(name, mask_conv)
             self.upsample_module.append(upsample)
@@ -121,12 +117,10 @@ class MaskHead(Layer):
                     name,
                     Conv2D(
                         in_channels=self.feat_in,
-                        out_channels=self.num_classes,
+                        out_channels=self.num_classes - 1,
                         kernel_size=1,
                         weight_attr=ParamAttr(initializer=KaimingNormal(
-                            fan_in=self.num_classes)),
-                        bias_attr=ParamAttr(
-                            learning_rate=2., regularizer=L2Decay(0.0)))))
+                            fan_in=self.num_classes)))))
 
     def forward_train(self,
                       body_feats,
@@ -206,15 +200,18 @@ class MaskHead(Layer):
                 spatial_scale, stage, bbox_head_feat_func)
         return mask_head_out
 
-    def get_loss(self, mask_head_out, mask_target):
-        mask_logits = paddle.flatten(mask_head_out, start_axis=1, stop_axis=-1)
-        mask_label = paddle.cast(x=mask_target, dtype='float32')
+    def get_loss(self, mask_head_out, mask_label, mask_target, mask_weight):
+        mask_label = F.one_hot(mask_label - 1, self.num_classes - 1).unsqueeze(
+            [2, 3])
+        mask_label = paddle.expand_as(mask_label, mask_head_out)
         mask_label.stop_gradient = True
-        loss_mask = ops.sigmoid_cross_entropy_with_logits(
-            input=mask_logits,
-            label=mask_label,
-            ignore_index=-1,
-            normalize=True)
-        loss_mask = paddle.sum(loss_mask)
+        mask_pred = paddle.gather_nd(mask_head_out, paddle.nonzero(mask_label))
+        shape = mask_head_out.shape
+        mask_pred = paddle.reshape(mask_pred, [shape[0], shape[2], shape[3]])
+
+        mask_target = mask_target.cast('float32')
+        mask_weight = mask_weight.unsqueeze([1, 2])
+        loss_mask = F.binary_cross_entropy_with_logits(
+            mask_pred, mask_target, weight=mask_weight, reduction="mean")
 
         return {'loss_mask': loss_mask}

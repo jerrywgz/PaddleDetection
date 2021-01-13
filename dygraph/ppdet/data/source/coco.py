@@ -44,6 +44,7 @@ class COCODataSet(DetDataset):
         from pycocotools.coco import COCO
         coco = COCO(anno_path)
         img_ids = coco.getImgIds()
+        img_ids.sort()
         cat_ids = coco.getCatIds()
         records = []
         ct = 0
@@ -63,7 +64,6 @@ class COCODataSet(DetDataset):
             self.load_image_only = True
             logger.warning('Annotation file: {} does not contains ground truth '
                            'and load image information only.'.format(anno_path))
-
         for img_id in img_ids:
             img_anno = coco.loadImgs(img_id)[0]
             im_fname = img_anno['file_name']
@@ -96,12 +96,14 @@ class COCODataSet(DetDataset):
                         if not any(np.array(inst['bbox'])):
                             continue
                     x, y, box_w, box_h = inst['bbox']
-                    x1 = max(0, x)
-                    y1 = max(0, y)
-                    x2 = min(im_w - 1, x1 + max(0, box_w - 1))
-                    y2 = min(im_h - 1, y1 + max(0, box_h - 1))
-                    if inst['area'] > 0 and x2 >= x1 and y2 >= y1:
-                        inst['clean_bbox'] = [x1, y1, x2, y2]
+                    x1 = x  #max(0, x)
+                    y1 = y  #max(0, y)
+                    x2 = x1 + box_w  #min(im_w - 1, x1 + max(0, box_w - 1))
+                    y2 = y1 + box_h  #min(im_h - 1, y1 + max(0, box_h - 1))
+                    if inst['area'] > 0 and x2 - x1 > 1e-5 and y2 - y1 > 1e-5:
+                        inst['clean_bbox'] = [
+                            round(float(x), 3) for x in [x1, y1, x2, y2]
+                        ]
                         bboxes.append(inst)
                     else:
                         logger.warning(

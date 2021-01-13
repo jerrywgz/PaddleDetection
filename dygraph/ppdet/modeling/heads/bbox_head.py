@@ -185,8 +185,9 @@ class BBoxHead(nn.Layer):
         cls_agnostic_bbox_reg = delta.shape[1] == 4
 
         fg_inds = paddle.nonzero(
-            paddle.logical_and(labels_int64 >= 0, labels_int64 < 80)).reshape(
-                [-1])
+            paddle.logical_and(labels_int64 >= 0, labels_int64 < 80)).flatten()
+        #fg_inds = paddle.nonzero(labels_int64 > 0).flatten()
+
         if cls_agnostic_bbox_reg:
             reg_delta = paddle.gather(delta, fg_inds)
         else:
@@ -194,7 +195,10 @@ class BBoxHead(nn.Layer):
 
             reg_row_inds = paddle.arange(fg_gt_classes.shape[0]).unsqueeze(1)
             reg_row_inds = paddle.tile(reg_row_inds, [1, 4]).reshape([-1, 1])
+
+            #reg_col_inds = 4 * (fg_gt_classes-1).unsqueeze(1) + paddle.arange(4)
             reg_col_inds = 4 * fg_gt_classes.unsqueeze(1) + paddle.arange(4)
+
             reg_col_inds = reg_col_inds.reshape([-1, 1])
             reg_inds = paddle.concat([reg_row_inds, reg_col_inds], axis=1)
 
@@ -207,6 +211,7 @@ class BBoxHead(nn.Layer):
 
         reg_target = bbox2delta(rois, bbox_targets, self.bbox_weight)
         reg_target = paddle.gather(reg_target, fg_inds)
+        reg_target.stop_gradient = True
 
         loss_box_reg = paddle.abs(reg_delta - reg_target).sum(
         ) / labels_int64.shape[0]

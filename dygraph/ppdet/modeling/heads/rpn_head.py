@@ -80,6 +80,7 @@ class RPNHead(nn.Layer):
         # cls loss
         score_pred = paddle.gather(loss_inputs['rpn_score_pred'], valid_ind)
         score_label = paddle.gather(score_tgt, valid_ind).cast('float32')
+        score_label.stop_gradient = True
         loss_rpn_cls = F.binary_cross_entropy_with_logits(
             logit=score_pred, label=score_label, reduction="sum")
 
@@ -87,6 +88,7 @@ class RPNHead(nn.Layer):
         loc_pred = paddle.gather(loss_inputs['rpn_rois_pred'], pos_ind)
         loc_tgt = paddle.concat(x=loss_inputs['rpn_rois_target'])
         loc_tgt = paddle.gather(loc_tgt, pos_ind)
+        loc_tgt.stop_gradient = True
         loss_rpn_reg = paddle.abs(loc_pred - loc_tgt).sum()
         norm = loss_inputs['norm']
         return {

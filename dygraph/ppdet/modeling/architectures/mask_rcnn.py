@@ -135,7 +135,6 @@ class MaskRCNN(BaseArch):
         loss_mask = self.mask_head.get_loss(self.mask_head_out, self.mask_label,
                                             self.mask_target, self.mask_weight)
         loss.update(loss_mask)
-
         total_loss = paddle.add_n(list(loss.values()))
         loss.update({'loss': total_loss})
         return loss

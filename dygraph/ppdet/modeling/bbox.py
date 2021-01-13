@@ -223,7 +223,6 @@ class Proposal(object):
         rpn_rois_list = [[] for i in range(batch_size)]
         rpn_prob_list = [[] for i in range(batch_size)]
         rpn_rois_num_list = [[] for i in range(batch_size)]
-        lvl = 0
         for (rpn_score, rpn_delta, anchor) in zip(rpn_scores, rpn_deltas,
                                                   anchors):
             for i in range(batch_size):
@@ -237,15 +236,15 @@ class Proposal(object):
                     rpn_rois_list[i].append(rpn_rois)
                     rpn_prob_list[i].append(rpn_rois_prob)
                     rpn_rois_num_list[i].append(rpn_rois_num)
-            lvl += 1
 
         rois_collect = []
         rois_num_collect = []
         for i in range(batch_size):
             if len(rpn_scores) > 1:
                 rpn_rois = paddle.concat(rpn_rois_list[i])
-                rpn_prob = paddle.concat(rpn_prob_list[i]).squeeze()
+                rpn_prob = paddle.concat(rpn_prob_list[i]).flatten()
                 if rpn_prob.shape[0] > post_nms_top_n:
+                    #print('collect fpn: ', rpn_prob.shape, post_nms_top_n)
                     topk_prob, topk_inds = paddle.topk(rpn_prob, post_nms_top_n)
                     topk_rois = paddle.gather(rpn_rois, topk_inds)
                 else:
@@ -253,10 +252,10 @@ class Proposal(object):
                     topk_prob = rpn_prob
             else:
                 topk_rois = rpn_rois_list[0]
-                topk_prob = rpn_prob_list[0].squeeze()
+                topk_prob = rpn_prob_list[0].flatten()
             rois_collect.append(topk_rois)
             rois_num_collect.append(topk_rois.shape[0])
-
+        #print('rois_collect: ', rois_collect[0].shape)
         return rois_collect, rois_num_collect
 
     def generate_proposal_target(self, inputs, rois, stage=0, max_overlap=None):

@@ -60,6 +60,7 @@ class RoIAlign(object):
     def __call__(self, feats, rois, spatial_scale):
         roi, rois_num = rois
         roi = paddle.concat(roi) if len(roi) > 1 else roi[0]
+
         if self.start_level == self.end_level:
             roi = roi[0]
             rois_feat = ops.roi_align(
@@ -95,7 +96,7 @@ class RoIAlign(object):
                 rois_feat_level  = ops.roi_align(feats[lvl], roi_level, self.resolution, 
                              spatial_scale[lvl], sampling_ratio=self.sampling_ratio, 
                              rois_num=rois_num_level, aligned=self.aligned) 
-                rois_feat = paddle.scatter(rois_feat, inds.reshape([-1]), rois_feat_level)
+                rois_feat = paddle.scatter(rois_feat, inds.flatten(), rois_feat_level)
            
 
             """
@@ -119,7 +120,8 @@ class RoIAlign(object):
                     sampling_ratio=self.sampling_ratio,
                     rois_num=rois_num_dist[lvl],
                     aligned=self.aligned)
-                rois_feat_list.append(roi_feat)
+                if roi_feat.shape[0] > 0:
+                    rois_feat_list.append(roi_feat)
             rois_feat_shuffle = paddle.concat(rois_feat_list)
             rois_feat = paddle.gather(rois_feat_shuffle, restore_index)
 

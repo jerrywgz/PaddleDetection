@@ -91,7 +91,7 @@ def nonempty_bbox(boxes, min_size):
     w = boxes[:, 2] - boxes[:, 0]
     h = boxes[:, 3] - boxes[:, 1]
     mask = paddle.logical_and(w > min_size, w > min_size)
-    keep = paddle.nonzero(mask).squeeze()
+    keep = paddle.nonzero(mask).flatten()
     return keep
 
 
@@ -111,11 +111,9 @@ def bbox_overlaps(boxes1, boxes2):
     width_height = width_height.clip(min=0)
     inter = width_height.prod(axis=2)
 
-    overlaps = paddle.where(
-        inter > 0,
-        inter / (paddle.unsqueeze(area1, 1) + area2 - inter),
-        paddle.zeros(
-            [1], dtype='float32'), )
+    overlaps = paddle.where(inter > 0, inter /
+                            (paddle.unsqueeze(area1, 1) + area2 - inter),
+                            paddle.zeros_like(inter))
     return overlaps
 
 

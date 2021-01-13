@@ -50,7 +50,7 @@ Anchor:
     fg_fraction: 0.5
     negative_overlap: 0.3
     positive_overlap: 0.7
-    use_random: True #False
+    use_random: True
 
 Proposal:
   proposal_generator:
@@ -73,7 +73,7 @@ Proposal:
     bg_thresh_hi: [0.5,]
     fg_thresh: [0.5,]
     fg_fraction: 0.25
-    use_random: True #False
+    use_random: True
 
 BBoxHead:
   bbox_feat:

@@ -113,18 +113,23 @@ class DecodeOp(BaseOperator):
 
     def apply(self, sample, context=None):
         """ load image if 'im_file' field is not empty but 'image' is"""
+        from PIL import Image
         if 'image' not in sample:
             with open(sample['im_file'], 'rb') as f:
-                sample['image'] = f.read()
+                #sample['image'] = f.read()
+                image = Image.open(f)
+                image = image.convert("RGB")
+                sample['image'] = np.asarray(image)
+
             sample.pop('im_file')
 
         im = sample['image']
-        data = np.frombuffer(im, dtype='uint8')
-        im = cv2.imdecode(data, 1)  # BGR mode, but need RGB mode
+        #data = np.frombuffer(im, dtype='uint8')
+        #im = cv2.imdecode(data, 1)  # BGR mode, but need RGB mode
 
         #im = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
 
-        sample['image'] = im
+        #sample['image'] = im
         if 'h' not in sample:
             sample['h'] = im.shape[0]
         elif sample['h'] != im.shape[0]:
@@ -599,23 +604,26 @@ class ResizeOp(BaseOperator):
             target_size = [target_size, target_size]
         self.target_size = target_size
 
-    def apply_image(self, image, scale):
+    def apply_image(self, image, scale, im_id):
         im_scale_x, im_scale_y = scale
         im_h = float(image.shape[0])
         im_w = float(image.shape[1])
-        resize_h = int(im_h * im_scale_y)
-        resize_w = int(im_w * im_scale_x)
+        resize_h = int(im_h * im_scale_y + 0.5)
+        resize_w = int(im_w * im_scale_x + 0.5)
         from PIL import Image
         pil_image = Image.fromarray(image)
         pil_image = pil_image.resize((resize_w, resize_h), self.interp)
-        return np.array(pil_image)
-        return cv2.resize(
-            image,
-            None,
-            None,
-            fx=im_scale_x,
-            fy=im_scale_y,
-            interpolation=self.interp)
+        tmp = np.array(pil_image)
+        im_scale_y = resize_h * 1.0 / im_h
+        im_scale_x = resize_w * 1.0 / im_w
+        return tmp, [im_scale_x, im_scale_y]
+        #return cv2.resize(
+        #    image,
+        #    None,
+        #    None,
+        #    fx=im_scale_x,
+        #    fy=im_scale_y,
+        #    interpolation=self.interp)
 
     def apply_bbox(self, bbox, scale, size):
         im_scale_x, im_scale_y = scale
@@ -697,28 +705,29 @@ class ResizeOp(BaseOperator):
             im_scale_y = resize_h / im_shape[0]
             im_scale_x = resize_w / im_shape[1]
 
-        im = self.apply_image(sample['image'], [im_scale_x, im_scale_y])
+        im, scale = self.apply_image(sample['image'], [im_scale_x, im_scale_y],
+                                     sample['im_id'])
         sample['image'] = im
-        sample['im_shape'] = np.asarray([resize_h, resize_w], dtype=np.float32)
+        sample['im_shape'] = np.asarray(
+            [im.shape[0], im.shape[1]], dtype=np.float32)
         if 'scale_factor' in sample:
             scale_factor = sample['scale_factor']
             sample['scale_factor'] = np.asarray(
-                [scale_factor[0] * im_scale_y, scale_factor[1] * im_scale_x],
+                [scale_factor[0] * scale[1], scale_factor[1] * scale[0]],
                 dtype=np.float32)
         else:
             sample['scale_factor'] = np.asarray(
-                [im_scale_y, im_scale_x], dtype=np.float32)
+                [scale[1], scale[0]], dtype=np.float32)
 
         # apply bbox
         if 'gt_bbox' in sample and len(sample['gt_bbox']) > 0:
-            sample['gt_bbox'] = self.apply_bbox(sample['gt_bbox'],
-                                                [im_scale_x, im_scale_y],
-                                                [resize_w, resize_h])
+            sample['gt_bbox'] = self.apply_bbox(sample['gt_bbox'], scale,
+                                                [im.shape[1], im.shape[0]])
 
         # apply polygon
         if 'gt_poly' in sample and len(sample['gt_poly']) > 0:
             sample['gt_poly'] = self.apply_segm(sample['gt_poly'], im_shape[:2],
-                                                [im_scale_x, im_scale_y])
+                                                scale)
 
         # apply semantic
         if 'semantic' in sample and sample['semantic']:

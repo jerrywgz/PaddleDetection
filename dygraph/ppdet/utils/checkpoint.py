@@ -109,7 +109,7 @@ def load_pretrain_weight(model,
                          load_static_weights=False,
                          weight_type='pretrain'):
 
-    #param_state_dict = paddle.load('detectron2paddle.pdparams')
+    #param_state_dict = paddle.load('detectron2paddle_init.pdparams')
     #model.set_dict(param_state_dict)
     #return
 

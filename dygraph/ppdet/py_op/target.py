@@ -34,12 +34,12 @@ def generate_rpn_anchor_target(anchors,
         labels = paddle.scatter(labels, fg_inds, paddle.ones_like(fg_inds))
         labels = paddle.scatter(labels, bg_inds, paddle.zeros_like(bg_inds))
         # Step3: make output  
-        if gt_bbox.shape[0] == 0:
-            matched_gt_boxes = paddle.zeros_like(anchor)
-        else:
-            matched_gt_boxes = paddle.gather(gt_bbox, matches)
+        matched_gt_boxes = paddle.gather(gt_bbox, matches)
 
         tgt_delta = bbox2delta(anchors, matched_gt_boxes, weights)
+        labels.stop_gradient = True
+        matched_gt_boxes.stop_gradient = True
+        tgt_delta.stop_gradient = True
         tgt_labels.append(labels)
         tgt_bboxes.append(matched_gt_boxes)
         tgt_deltas.append(tgt_delta)
@@ -54,41 +54,34 @@ def label_box(anchors, gt_boxes, positive_overlap, negative_overlap,
         default_matches = paddle.full((iou.shape[1], ), 0, dtype='int64')
         default_match_labels = paddle.full((iou.shape[1], ), -1, dtype='int32')
         return default_matches, default_match_labels
-
     matched_vals, matches = paddle.topk(iou, k=1, axis=0)
     match_labels = paddle.full(matches.shape, -1, dtype='int32')
 
-    match_labels = paddle.where(
-        matched_vals < negative_overlap,
-        paddle.zeros(
-            [1], dtype='int32'),
-        match_labels)
-    match_labels = paddle.where(
-        matched_vals >= positive_overlap,
-        paddle.ones(
-            [1], dtype='int32'),
-        match_labels)
-
+    match_labels = paddle.where(matched_vals < negative_overlap,
+                                paddle.zeros_like(match_labels), match_labels)
+    match_labels = paddle.where(matched_vals >= positive_overlap,
+                                paddle.ones_like(match_labels), match_labels)
     if allow_low_quality:
         highest_quality_foreach_gt = iou.max(axis=1, keepdim=True)
         pred_inds_with_highest_quality = (
-            iou == highest_quality_foreach_gt).cast('int32').sum(0)
+            iou == highest_quality_foreach_gt).cast('int32').sum(0,
+                                                                 keepdim=True)
+        match_labels = paddle.where(pred_inds_with_highest_quality > 0,
+                                    paddle.ones_like(match_labels),
+                                    match_labels)
 
-        match_labels = paddle.where(
-            pred_inds_with_highest_quality > 0,
-            paddle.ones(
-                [1], dtype='int32'),
-            match_labels)
-
-    matches = matches.reshape([-1])
-    match_labels = match_labels.reshape([-1])
-    matched_vals = matched_vals.reshape([-1])
+    matches = matches.flatten()
+    match_labels = match_labels.flatten()
+    matched_vals = matched_vals.flatten()
     return matches, match_labels, matched_vals
 
 
 def subsample_labels(labels, num_samples, fg_fraction, use_random=True):
-    positive = paddle.nonzero(labels > 0).cast('int32').reshape([-1])
-    negative = paddle.nonzero(labels == 0).cast('int32').reshape([-1])
+    positive = paddle.nonzero(labels > 0)
+    negative = paddle.nonzero(labels == 0)
+
+    positive = positive.cast('int32').flatten()
+    negative = negative.cast('int32').flatten()
 
     fg_num = int(num_samples * fg_fraction)
     fg_num = min(positive.numel(), fg_num)
@@ -135,8 +128,6 @@ def generate_proposal_target(rpn_rois,
     tgt_gt_inds = []
     new_rois_num = []
 
-    st_num = 0
-    end_num = 0
     for i, rpn_roi in enumerate(rpn_rois):
         max_overlap = max_overlaps[i] if is_cascade_rcnn else None
         gt_bbox = gt_boxes[i]
@@ -157,7 +148,12 @@ def generate_proposal_target(rpn_rois,
         rois_per_image = paddle.gather(bbox, sampled_inds)
         sampled_gt_ind = paddle.gather(matches, sampled_inds)
         sampled_bbox = paddle.gather(gt_bbox, sampled_gt_ind)
-        sampled_overlap = paddle.gather(matched_vals.squeeze(), sampled_inds)
+        sampled_overlap = paddle.gather(matched_vals, sampled_inds)
+
+        rois_per_image.stop_gradient = True
+        sampled_gt_ind.stop_gradient = True
+        sampled_bbox.stop_gradient = True
+        sampled_overlap.stop_gradient = True
 
         tgt_labels.append(sampled_gt_classes)
         tgt_bboxes.append(sampled_bbox)
@@ -178,11 +174,15 @@ def sample_bbox(
         use_random=True, ):
     gt_classes = paddle.gather(gt_classes, matches)
     gt_classes = paddle.where(
-        match_labels == 0, paddle.zeros(
-            [1], dtype='int32'), gt_classes)
+        match_labels == 0,
+        paddle.zeros(
+            gt_classes.shape, dtype='int32'),
+        gt_classes)
     gt_classes = paddle.where(
-        match_labels == -1, paddle.ones(
-            [1], dtype='int32') * -1, gt_classes)
+        match_labels == -1,
+        paddle.ones(
+            gt_classes.shape, dtype='int32') * -1,
+        gt_classes)
     rois_per_image = int(batch_size_per_im)
 
     fg_inds, bg_inds = subsample_labels(gt_classes, rois_per_image, fg_fraction,
@@ -248,7 +248,7 @@ def rasterize_polygons_within_box(poly, box, resolution):
 
     # 3. Rasterize the polygons with coco api
     mask = polygons_to_mask(polygons, resolution, resolution)
-    mask = paddle.to_tensor(mask).cast('int32')
+    mask = paddle.to_tensor(mask, dtype='int32')
     return mask
 
 
@@ -290,6 +290,9 @@ def generate_mask_target(gt_segms, rois, rois_num, labels_int32,
             for poly, box in zip(new_gt_polys, boxes)
         ]
         tgt_mask = paddle.stack(results)
+        tgt_mask.stop_gradient = True
+        fg_rois.stop_gradient = True
+
         mask_index.append(fg_inds)
         mask_rois.append(fg_rois)
         mask_rois_num.append(fg_rois.shape[0])

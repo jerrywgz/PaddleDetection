@@ -17,7 +17,7 @@ import paddle.nn.functional as F
 from paddle import ParamAttr
 from paddle.nn import Layer, Sequential
 from paddle.nn import Conv2D, Conv2DTranspose, ReLU
-from paddle.nn.initializer import KaimingNormal
+from paddle.nn.initializer import KaimingNormal, Normal
 from paddle.regularizer import L2Decay
 from ppdet.core.workspace import register
 from ppdet.modeling import ops
@@ -119,8 +119,8 @@ class MaskHead(Layer):
                         in_channels=self.feat_in,
                         out_channels=self.num_classes - 1,
                         kernel_size=1,
-                        weight_attr=ParamAttr(initializer=KaimingNormal(
-                            fan_in=self.num_classes)))))
+                        weight_attr=ParamAttr(initializer=Normal(
+                            mean=0.0, std=0.001)))))
 
     def forward_train(self,
                       body_feats,

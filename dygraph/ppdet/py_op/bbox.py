@@ -36,11 +36,10 @@ def delta2bbox(deltas, boxes, weights):
     ctr_y = boxes[:, 1] + 0.5 * heights
 
     wx, wy, ww, wh = weights
-    dx, dy, dw, dh = paddle.tensor.split(deltas, 4, axis=1)
-    dx = dx * wx
-    dy = dy * wy
-    dw = dw * ww
-    dh = dh * wh
+    dx = deltas[:, 0::4] / wx
+    dy = deltas[:, 1::4] / wy
+    dw = deltas[:, 2::4] / ww
+    dh = deltas[:, 3::4] / wh
     # Prevent sending too large values into np.exp()
     dw = paddle.clip(dw, max=clip_scale)
     dh = paddle.clip(dh, max=clip_scale)
@@ -50,13 +49,12 @@ def delta2bbox(deltas, boxes, weights):
     pred_w = paddle.exp(dw) * widths.unsqueeze(1)
     pred_h = paddle.exp(dh) * heights.unsqueeze(1)
 
-    x1 = pred_ctr_x - 0.5 * pred_w
-    y1 = pred_ctr_y - 0.5 * pred_h
-    x2 = pred_ctr_x + 0.5 * pred_w
-    y2 = pred_ctr_y + 0.5 * pred_h
+    pred_boxes = paddle.zeros_like(deltas)
 
-    pred_boxes = paddle.concat([x1, y1, x2, y2], axis=1)
-
+    pred_boxes[:, 0::4] = pred_ctr_x - 0.5 * pred_w
+    pred_boxes[:, 1::4] = pred_ctr_y - 0.5 * pred_h
+    pred_boxes[:, 2::4] = pred_ctr_x + 0.5 * pred_w
+    pred_boxes[:, 3::4] = pred_ctr_y + 0.5 * pred_h
     return pred_boxes
 
 
@@ -87,10 +85,12 @@ def clip_bbox(boxes, im_shape):
     return paddle.stack([x1, y1, x2, y2], axis=1)
 
 
-def nonempty_bbox(boxes, min_size):
+def nonempty_bbox(boxes, min_size=0, return_mask=False):
     w = boxes[:, 2] - boxes[:, 0]
     h = boxes[:, 3] - boxes[:, 1]
     mask = paddle.logical_and(w > min_size, w > min_size)
+    if return_mask:
+        return mask
     keep = paddle.nonzero(mask).flatten()
     return keep
 

@@ -87,12 +87,6 @@ def run(FLAGS, cfg, place):
         for key, value in outs.items():
             outs[key] = value.numpy()
 
-        if 'mask' in outs and 'bbox' in outs:
-            mask_resolution = model.mask_post_process.mask_resolution
-            from ppdet.py_op.post_process import mask_post_process
-            outs['mask'] = mask_post_process(
-                outs, outs['im_shape'], outs['scale_factor'], mask_resolution)
-
         outs_res.append(outs)
         # log
         sample_num += outs['im_id'].shape[0]

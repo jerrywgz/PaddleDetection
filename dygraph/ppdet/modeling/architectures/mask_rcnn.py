@@ -19,6 +19,7 @@ from __future__ import print_function
 import paddle
 from ppdet.core.workspace import register
 from .meta_arch import BaseArch
+from ppdet.py_op.post_process import bbox_post_process, mask_post_process
 
 __all__ = ['MaskRCNN']
 
@@ -101,8 +102,7 @@ class MaskRCNN(BaseArch):
                 self.bbox_head_out, self.rois)
             # Refine bbox by the output from bbox_head at test stage
             self.bboxes = self.bbox_post_process(bbox_pred, bboxes,
-                                                 self.inputs['im_shape'],
-                                                 self.inputs['scale_factor'])
+                                                 self.inputs['im_shape'])
         else:
             # Proposal RoI for Mask branch
             # bboxes update at training stage only
@@ -140,10 +140,18 @@ class MaskRCNN(BaseArch):
         return loss
 
     def get_pred(self):
+        self.bboxes = bbox_post_process(self.bboxes, self.inputs)
+        mask = mask_post_process(self.mask_head_out[:, 0, :, :], self.bboxes,
+                                 self.inputs)
         bbox, bbox_num = self.bboxes
+        label = bbox[:, 0]
+        score = bbox[:, 1]
+        bbox = bbox[:, 2:]
         output = {
             'bbox': bbox,
+            'score': score,
+            'label': label,
             'bbox_num': bbox_num,
-            'mask': self.mask_head_out
+            'mask': mask,
         }
         return output

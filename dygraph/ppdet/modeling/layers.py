@@ -19,6 +19,7 @@ from numbers import Integral
 import paddle
 from paddle import to_tensor
 from ppdet.core.workspace import register, serializable
+from ppdet.py_op.bbox import delta2bbox
 from ppdet.py_op.target import generate_rpn_anchor_target, generate_proposal_target, generate_mask_target
 from ppdet.py_op.post_process import bbox_post_process
 from . import ops
@@ -285,8 +286,8 @@ class MaskTargetGenerator(object):
         super(MaskTargetGenerator, self).__init__()
         self.mask_resolution = mask_resolution
 
-    def __call__(self, gt_segms, rois, rois_num, labels_int32, sampled_gt_inds):
-        outs = generate_mask_target(gt_segms, rois, rois_num, labels_int32,
+    def __call__(self, gt_segms, rois, labels_int32, sampled_gt_inds):
+        outs = generate_mask_target(gt_segms, rois, labels_int32,
                                     sampled_gt_inds, self.mask_resolution)
 
         return outs
@@ -295,64 +296,52 @@ class MaskTargetGenerator(object):
 @register
 @serializable
 class RCNNBox(object):
-    __shared__ = ['num_classes', 'batch_size']
-
     def __init__(self,
-                 num_classes=81,
-                 batch_size=1,
-                 prior_box_var=[0.1, 0.1, 0.2, 0.2],
+                 prior_box_var=[10., 10., 5., 5.],
                  code_type="decode_center_size",
                  box_normalized=False,
-                 axis=1,
-                 var_weight=1.):
+                 axis=1):
         super(RCNNBox, self).__init__()
-        self.num_classes = num_classes
-        self.batch_size = batch_size
         self.prior_box_var = prior_box_var
         self.code_type = code_type
         self.box_normalized = box_normalized
         self.axis = axis
-        self.var_weight = var_weight
 
     def __call__(self, bbox_head_out, rois, im_shape, scale_factor):
         bbox_pred, cls_prob = bbox_head_out
         roi, rois_num = rois
-        origin_shape = im_shape / scale_factor
         scale_list = []
         origin_shape_list = []
-        for idx in range(self.batch_size):
-            scale = scale_factor[idx, :][0]
+        for idx, roi_per_im in enumerate(roi):
             rois_num_per_im = rois_num[idx]
-            expand_scale = paddle.expand(scale, [rois_num_per_im, 1])
-            scale_list.append(expand_scale)
-            expand_im_shape = paddle.expand(origin_shape[idx, :],
+            expand_im_shape = paddle.expand(im_shape[idx, :],
                                             [rois_num_per_im, 2])
             origin_shape_list.append(expand_im_shape)
 
-        scale = paddle.concat(scale_list)
         origin_shape = paddle.concat(origin_shape_list)
 
-        bbox = roi / scale
-        prior_box_var = [i / self.var_weight for i in self.prior_box_var]
-        bbox = ops.box_coder(
-            prior_box=bbox,
-            prior_box_var=prior_box_var,
-            target_box=bbox_pred,
-            code_type=self.code_type,
-            box_normalized=self.box_normalized,
-            axis=self.axis)
-        # TODO: Updata box_clip
-        origin_h = paddle.unsqueeze(origin_shape[:, 0] - 1, axis=1)
-        origin_w = paddle.unsqueeze(origin_shape[:, 1] - 1, axis=1)
-        zeros = paddle.zeros(origin_h.shape, 'float32')
+        # [N, C*4] 
+        bbox = paddle.concat(roi)
+        bbox = delta2bbox(bbox_pred, bbox, self.prior_box_var)
+        scores = cls_prob[:, :-1]
+
+        # [N*C, 4]
+        #bbox = paddle.reshape(bbox, [-1, 4])
+        #bbox = clip_bbox(bbox, origin_shape)
+
+        bbox_num_class = bbox.shape[1] // 4
+        bbox = paddle.reshape(bbox, [-1, bbox_num_class, 4])
+
+        origin_h = paddle.unsqueeze(origin_shape[:, 0], axis=1)
+        origin_w = paddle.unsqueeze(origin_shape[:, 1], axis=1)
+        zeros = paddle.zeros_like(origin_h)
         x1 = paddle.maximum(paddle.minimum(bbox[:, :, 0], origin_w), zeros)
         y1 = paddle.maximum(paddle.minimum(bbox[:, :, 1], origin_h), zeros)
         x2 = paddle.maximum(paddle.minimum(bbox[:, :, 2], origin_w), zeros)
         y2 = paddle.maximum(paddle.minimum(bbox[:, :, 3], origin_h), zeros)
         bbox = paddle.stack([x1, y1, x2, y2], axis=-1)
-
         bboxes = (bbox, rois_num)
-        return bboxes, cls_prob
+        return bboxes, scores
 
 
 @register

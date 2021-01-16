@@ -90,15 +90,14 @@ BBoxHead:
   in_feat: 1024
 
 BBoxPostProcess:
-  decode:
-    name: RCNNBox
-    num_classes: 81
-    batch_size: 1
+  decode: RCNNBox
   nms:
     name: MultiClassNMS
     keep_top_k: 100
     score_threshold: 0.05
     nms_threshold: 0.5
+    background_label: -1
+    normalized: true
 
 Mask:
   mask_target_generator:

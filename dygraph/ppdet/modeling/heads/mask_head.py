@@ -154,8 +154,9 @@ class MaskHead(Layer):
         bbox, bbox_num = bboxes
 
         if bbox.shape[0] == 0:
-            mask_head_out = paddle.full([1, 6], -1)
+            mask_head_out = paddle.full([1, 1, 1, 1], -1)
         else:
+            """
             scale_factor_list = []
             for idx in range(bbox_num.shape[0]):
                 num = bbox_num[idx]
@@ -168,9 +169,12 @@ class MaskHead(Layer):
             scale_factor_list = paddle.reshape(scale_factor_list, shape=[-1, 1])
             scaled_bbox = paddle.multiply(bbox[:, 2:], scale_factor_list)
             scaled_bboxes = (scaled_bbox, bbox_num)
+            """
+            bboxes = ([bbox[:, 2:]], bbox_num)
+            labels = bbox[:, 0].cast('int32')
             mask_feat = self.mask_feat(
                 body_feats,
-                scaled_bboxes,
+                bboxes,
                 bbox_feat,
                 mask_index,
                 spatial_scale,
@@ -178,7 +182,19 @@ class MaskHead(Layer):
                 bbox_head_feat_func,
                 mode='infer')
             mask_logit = self.mask_fcn_logits[stage](mask_feat)
-            mask_head_out = F.sigmoid(mask_logit)
+            #mask_head_out = F.sigmoid(mask_logit)
+            mask_num_class = mask_logit.shape[1]
+            if mask_num_class == 1:
+                mask_head_out = F.sigmoid(mask_logit)
+            else:
+                num_masks = mask_logit.shape[0]
+                pred_masks = paddle.split(mask_logit, num_masks)
+                mask_head_out = []
+                # TODO: need to optimize gather
+                for i, pred_mask in enumerate(pred_masks):
+                    mask = paddle.gather(pred_mask, labels[i], axis=1)
+                    mask_head_out.append(mask)
+                mask_head_out = F.sigmoid(paddle.concat(mask_head_out))
         return mask_head_out
 
     def forward(self,

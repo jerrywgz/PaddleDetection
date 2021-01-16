@@ -55,12 +55,14 @@ def get_infer_results(outs_res, eval_type, catid):
         scale_factor = outs['scale_factor']
 
         if 'bbox' in eval_type:
-            infer_res['bbox'] += get_det_res(outs['bbox'], outs['bbox_num'],
-                                             im_id, catid)
+            infer_res['bbox'] += get_det_res(outs['bbox'], outs['score'],
+                                             outs['label'], outs['bbox_num'],
+                                             scale_factor, im_id, catid)
 
         if 'mask' in eval_type:
             # mask post process
-            infer_res['mask'] += get_seg_res(outs['mask'], outs['bbox_num'],
+            infer_res['mask'] += get_seg_res(outs['mask'], outs['score'],
+                                             outs['label'], outs['bbox_num'],
                                              im_id, catid)
 
     return infer_res

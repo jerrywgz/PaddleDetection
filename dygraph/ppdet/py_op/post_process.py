@@ -2,154 +2,131 @@ import six
 import os
 import numpy as np
 from numba import jit
-from .bbox import delta2bbox, clip_bbox, expand_bbox, nms
-import pycocotools.mask as mask_util
+
+import paddle
+import paddle.nn.functional as F
+from .bbox import delta2bbox, clip_bbox, expand_bbox, nms, nonempty_bbox
 import cv2
 
 
-def bbox_post_process(bboxes,
-                      bbox_prob,
-                      bbox_deltas,
-                      im_shape,
-                      scale_factor,
-                      keep_top_k=100,
-                      score_thresh=0.05,
-                      nms_thresh=0.5,
-                      class_nums=81,
-                      bbox_reg_weights=[0.1, 0.1, 0.2, 0.2],
-                      with_background=True):
+def bbox_post_process(det_res, inputs):
+    bbox, bbox_num = det_res  # [N, 6], [N,]
+    if bbox.shape[0] == 0:
+        return det_res
+    im_shape = inputs['im_shape']
+    scale_factor = inputs['scale_factor']
+
+    # scale_factor: scale_y, scale_x
+    origin_shape = im_shape / scale_factor
+
+    origin_shape_list = []
+    scale_factor_list = []
+    for i in range(bbox_num.shape[0]):
+        expand_shape = paddle.expand(origin_shape[i:i + 1, :], [bbox_num[i], 2])
+        scale_y, scale_x = scale_factor[i]
+        scale = paddle.concat([scale_x, scale_y, scale_x, scale_y])
+        expand_scale = paddle.expand(scale, [bbox_num[i], 4])
+        origin_shape_list.append(expand_shape)
+        scale_factor_list.append(expand_scale)
+
+    origin_shape_list = paddle.concat(origin_shape_list)
+    scale_factor_list = paddle.concat(scale_factor_list)
+
+    pred_label = bbox[:, 0:1]
+    pred_score = bbox[:, 1:2]
+    pred_bbox = bbox[:, 2:]
+    scaled_bbox = pred_bbox / scale_factor_list
+    origin_h = origin_shape_list[:, 0]
+    origin_w = origin_shape_list[:, 1]
+    zeros = paddle.zeros_like(origin_h)
+    x1 = paddle.maximum(paddle.minimum(scaled_bbox[:, 0], origin_w), zeros)
+    y1 = paddle.maximum(paddle.minimum(scaled_bbox[:, 1], origin_h), zeros)
+    x2 = paddle.maximum(paddle.minimum(scaled_bbox[:, 2], origin_w), zeros)
+    y2 = paddle.maximum(paddle.minimum(scaled_bbox[:, 3], origin_h), zeros)
+    pred_bbox = paddle.stack([x1, y1, x2, y2], axis=-1)
+
+    keep_mask = nonempty_bbox(pred_bbox, return_mask=True)
+    keep_mask = paddle.unsqueeze(keep_mask, [1])
+    pred_label = paddle.where(keep_mask, pred_label,
+                              paddle.ones_like(pred_label) * -1)
+
+    pred_result = paddle.concat([pred_label, pred_score, pred_bbox], axis=1)
+    return pred_result, bbox_num
+
+
+def paste_mask(masks, boxes, im_h, im_w):
+    # paste each mask on image
+    x0, y0, x1, y1 = paddle.split(boxes, 4, axis=1)
+    masks = paddle.unsqueeze(masks, [0, 1])
+    img_y = paddle.arange(0, im_h, dtype='float32') + 0.5
+    img_x = paddle.arange(0, im_w, dtype='float32') + 0.5
+    img_y = (img_y - y0) / (y1 - y0) * 2 - 1
+    img_x = (img_x - x0) / (x1 - x0) * 2 - 1
+    img_x = paddle.unsqueeze(img_x, [1])
+    img_y = paddle.unsqueeze(img_y, [2])
+    N = boxes.shape[0]
+
+    gx = paddle.expand(img_x, [N, img_y.shape[1], img_x.shape[2]])
+    gy = paddle.expand(img_y, [N, img_y.shape[1], img_x.shape[2]])
+    grid = paddle.stack([gx, gy], axis=3)
+    img_masks = F.grid_sample(masks, grid, align_corners=False)
+    return img_masks[:, 0]
+
+
+def mask_post_process(head_out, bboxes, inputs, thresh=0.5):
+    """
+    Args:
+        head_out (Tensor): output from mask_head, the shape is [N, M, M]
+        bboxes (List): prediction bounding bbox, contains [bbox, bbox_num]
+        inputs (Dict): input of network
+    """
     bbox, bbox_num = bboxes
-    new_bbox = [[] for _ in range(len(bbox_num))]
-    new_bbox_num = []
-    st_num = 0
-    end_num = 0
-    for i in range(len(bbox_num)):
-        box_num = bbox_num[i]
-        end_num += box_num
+    if bbox.shape == 0:
+        return head_out
+    im_shape = inputs['im_shape']
+    scale_factor = inputs['scale_factor']
 
-        boxes = bbox[st_num:end_num, :]  # bbox 
-        boxes = boxes / scale_factor[i]  # scale
-        bbox_delta = bbox_deltas[st_num:end_num, :, :]  # bbox delta 
-        bbox_delta = np.reshape(bbox_delta, (box_num, -1))
-        # step1: decode 
-        boxes = delta2bbox(bbox_delta, boxes, bbox_reg_weights)
+    # scale_factor: scale_y, scale_x
+    origin_shape = im_shape / scale_factor
+    origin_shape_list = []
+    for i in range(bbox_num.shape[0]):
+        expand_shape = paddle.expand(origin_shape[i, :], [bbox_num[i], 2])
+        origin_shape_list.append(expand_shape)
+    origin_shape_list = paddle.floor(paddle.concat(origin_shape_list) + 0.5)
 
-        # step2: clip 
-        boxes = clip_bbox(boxes, im_shape[i][:2] / scale_factor[i])
-        # step3: nms 
-        cls_boxes = [[] for _ in range(class_nums)]
-        scores_n = bbox_prob[st_num:end_num, :]
-        for j in range(with_background, class_nums):
-            inds = np.where(scores_n[:, j] > score_thresh)[0]
-            scores_j = scores_n[inds, j]
-            rois_j = boxes[inds, j * 4:(j + 1) * 4]
-            dets_j = np.hstack((scores_j[:, np.newaxis], rois_j)).astype(
-                np.float32, copy=False)
-            keep = nms(dets_j, nms_thresh)
-            nms_dets = dets_j[keep, :]
-            #add labels
-            label = np.array([j for _ in range(len(keep))])
-            nms_dets = np.hstack((label[:, np.newaxis], nms_dets)).astype(
-                np.float32, copy=False)
-            cls_boxes[j] = nms_dets
+    num_mask = head_out.shape[0]
+    # TODO: support bs > 1
+    pred_result = paddle.zeros(
+        [num_mask, origin_shape_list[0][0], origin_shape_list[0][1]],
+        dtype='bool')
+    # TODO: optimize chunk paste
+    for i in range(bbox.shape[0]):
+        im_h, im_w = origin_shape_list[i]
+        pred_mask = paste_mask(head_out[i], bbox[i:i + 1, 2:], im_h, im_w)
+        pred_mask = pred_mask >= thresh
+        pred_result[i] = pred_mask
 
-        st_num += box_num
-
-        # Limit to max_per_image detections **over all classes**
-        image_scores = np.hstack(
-            [cls_boxes[j][:, 1] for j in range(with_background, class_nums)])
-        if len(image_scores) > keep_top_k:
-            image_thresh = np.sort(image_scores)[-keep_top_k]
-            for j in range(with_background, class_nums):
-                keep = np.where(cls_boxes[j][:, 1] >= image_thresh)[0]
-                cls_boxes[j] = cls_boxes[j][keep, :]
-        new_bbox_n = np.vstack(
-            [cls_boxes[j] for j in range(with_background, class_nums)])
-        new_bbox[i] = new_bbox_n
-        new_bbox_num.append(len(new_bbox_n))
-    new_bbox = np.vstack([new_bbox[k] for k in range(len(bbox_num))])
-    new_bbox_num = np.array(new_bbox_num).astype('int32')
-    return new_bbox, new_bbox_num
+    return pred_result
 
 
-@jit
-def mask_post_process(det_res,
-                      im_shape,
-                      scale_factor,
-                      resolution=14,
-                      binary_thresh=0.5):
-    bbox = det_res['bbox']
-    bbox_num = det_res['bbox_num']
-    masks = det_res['mask']
-    if masks.shape[0] == 0:
-        return masks
-    M = resolution
-    scale = (M + 2.0) / M
-    boxes = bbox[:, 2:]
-    labels = bbox[:, 0]
-    segms_results = [[] for _ in range(len(bbox_num))]
-    sum = 0
-    st_num = 0
-    end_num = 0
-    for i in range(len(bbox_num)):
-        length = bbox_num[i]
-        end_num += length
-        cls_segms = []
-        boxes_n = boxes[st_num:end_num]
-        labels_n = labels[st_num:end_num]
-        masks_n = masks[st_num:end_num]
-
-        im_h = int(round(im_shape[i][0] / scale_factor[i, 0]))
-        im_w = int(round(im_shape[i][1] / scale_factor[i, 0]))
-        boxes_n = expand_bbox(boxes_n, scale)
-        boxes_n = boxes_n.astype(np.int32)
-        padded_mask = np.zeros((M + 2, M + 2), dtype=np.float32)
-        for j in range(len(boxes_n)):
-            class_id = int(labels_n[j])
-            padded_mask[1:-1, 1:-1] = masks_n[j, class_id, :, :]
-
-            ref_box = boxes_n[j, :]
-            w = ref_box[2] - ref_box[0] + 1
-            h = ref_box[3] - ref_box[1] + 1
-            w = np.maximum(w, 1)
-            h = np.maximum(h, 1)
-
-            mask = cv2.resize(padded_mask, (w, h))
-            mask = np.array(mask > binary_thresh, dtype=np.uint8)
-            im_mask = np.zeros((im_h, im_w), dtype=np.uint8)
-
-            x_0 = max(ref_box[0], 0)
-            x_1 = min(ref_box[2] + 1, im_w)
-            y_0 = max(ref_box[1], 0)
-            y_1 = min(ref_box[3] + 1, im_h)
-            im_mask[y_0:y_1, x_0:x_1] = mask[(y_0 - ref_box[1]):(y_1 - ref_box[
-                1]), (x_0 - ref_box[0]):(x_1 - ref_box[0])]
-            sum += im_mask.sum()
-            rle = mask_util.encode(
-                np.array(
-                    im_mask[:, :, np.newaxis], order='F'))[0]
-            cls_segms.append(rle)
-        segms_results[i] = np.array(cls_segms)[:, np.newaxis]
-        st_num += length
-    segms_results = np.vstack([segms_results[k] for k in range(len(bbox_num))])
-    bboxes = np.hstack([segms_results, bbox])
-    return bboxes[:, :3]
-
-
-@jit
-def get_det_res(bboxes, bbox_nums, image_id, num_id_to_cat_id_map):
+def get_det_res(bboxes, scores, labels, bbox_nums, scale_factor, image_id,
+                num_id_to_cat_id_map):
     det_res = []
     k = 0
     for i in range(len(bbox_nums)):
         cur_image_id = int(image_id[i][0])
+        scale_y, scale_x = scale_factor[i]
         det_nums = bbox_nums[i]
         for j in range(det_nums):
-            dt = bboxes[k]
+            box = bboxes[k]
+            score = float(scores[k])
+            label = int(labels[k])
+            if label < 0: continue
             k = k + 1
-            num_id, score, xmin, ymin, xmax, ymax = dt.tolist()
-            category_id = num_id_to_cat_id_map[num_id]
-            w = xmax - xmin + 1
-            h = ymax - ymin + 1
+            xmin, ymin, xmax, ymax = box.tolist()
+            category_id = num_id_to_cat_id_map[label + 1]
+            w = xmax - xmin
+            h = ymax - ymin
             bbox = [xmin, ymin, w, h]
             dt_res = {
                 'image_id': cur_image_id,
@@ -161,25 +138,30 @@ def get_det_res(bboxes, bbox_nums, image_id, num_id_to_cat_id_map):
     return det_res
 
 
-@jit
-def get_seg_res(masks, mask_nums, image_id, num_id_to_cat_id_map):
+def get_seg_res(masks, scores, labels, mask_nums, image_id,
+                num_id_to_cat_id_map):
+    import pycocotools.mask as mask_util
     seg_res = []
     k = 0
     for i in range(len(mask_nums)):
         cur_image_id = int(image_id[i][0])
         det_nums = mask_nums[i]
         for j in range(det_nums):
-            dt = masks[k]
+            mask = masks[k]
+            score = float(scores[k])
+            label = int(labels[k])
             k = k + 1
-            sg, num_id, score = dt.tolist()
-            cat_id = num_id_to_cat_id_map[num_id]
+            cat_id = num_id_to_cat_id_map[label + 1]
+            rle = mask_util.encode(
+                np.array(
+                    mask[:, :, None], order="F", dtype="uint8"))[0]
             if six.PY3:
-                if 'counts' in sg:
-                    sg['counts'] = sg['counts'].decode("utf8")
+                if 'counts' in rle:
+                    rle['counts'] = rle['counts'].decode("utf8")
             sg_res = {
                 'image_id': cur_image_id,
                 'category_id': cat_id,
-                'segmentation': sg,
+                'segmentation': rle,
                 'score': score
             }
             seg_res.append(sg_res)

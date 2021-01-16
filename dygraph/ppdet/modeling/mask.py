@@ -23,7 +23,6 @@ class Mask(object):
         mask_rois, mask_rois_num, mask_label, mask_target, mask_index, mask_weight = self.mask_target_generator(
             gt_segms=inputs['gt_poly'],
             rois=proposals,
-            rois_num=proposals_num,
             labels_int32=labels_int32,
             sampled_gt_inds=sampled_gt_inds)
         return mask_rois, mask_rois_num, mask_label, mask_target, mask_index, mask_weight

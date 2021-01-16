@@ -244,7 +244,6 @@ class Proposal(object):
                 rpn_rois = paddle.concat(rpn_rois_list[i])
                 rpn_prob = paddle.concat(rpn_prob_list[i]).flatten()
                 if rpn_prob.shape[0] > post_nms_top_n:
-                    #print('collect fpn: ', rpn_prob.shape, post_nms_top_n)
                     topk_prob, topk_inds = paddle.topk(rpn_prob, post_nms_top_n)
                     topk_rois = paddle.gather(rpn_rois, topk_inds)
                 else:
@@ -254,8 +253,8 @@ class Proposal(object):
                 topk_rois = rpn_rois_list[0]
                 topk_prob = rpn_prob_list[0].flatten()
             rois_collect.append(topk_rois)
-            rois_num_collect.append(topk_rois.shape[0])
-        #print('rois_collect: ', rois_collect[0].shape)
+            rois_num_collect.append(paddle.shape(topk_rois)[0])
+        rois_num_collect = paddle.concat(rois_num_collect)
         return rois_collect, rois_num_collect
 
     def generate_proposal_target(self, inputs, rois, stage=0, max_overlap=None):

@@ -160,8 +160,8 @@ def generate_proposal_target(rpn_rois,
         rois_with_gt.append(rois_per_image)
         sampled_max_overlaps.append(sampled_overlap)
         tgt_gt_inds.append(sampled_gt_ind)
-        new_rois_num.append(sampled_inds.shape[0])
-    new_rois_num = paddle.to_tensor(new_rois_num, dtype='int32')
+        new_rois_num.append(paddle.shape(sampled_inds)[0])
+    new_rois_num = paddle.concat(new_rois_num)
     return rois_with_gt, tgt_labels, tgt_bboxes, tgt_gt_inds, new_rois_num, sampled_max_overlaps
 
 
@@ -252,8 +252,8 @@ def rasterize_polygons_within_box(poly, box, resolution):
     return mask
 
 
-def generate_mask_target(gt_segms, rois, rois_num, labels_int32,
-                         sampled_gt_inds, resolution):
+def generate_mask_target(gt_segms, rois, labels_int32, sampled_gt_inds,
+                         resolution):
     mask_rois = []
     mask_rois_num = []
     tgt_masks = []
@@ -295,13 +295,13 @@ def generate_mask_target(gt_segms, rois, rois_num, labels_int32,
 
         mask_index.append(fg_inds)
         mask_rois.append(fg_rois)
-        mask_rois_num.append(fg_rois.shape[0])
+        mask_rois_num.append(paddle.shape(fg_rois)[0])
         tgt_classes.append(fg_classes)
         tgt_masks.append(tgt_mask)
         tgt_weights.append(weight)
 
     mask_index = paddle.nonzero(paddle.concat(labels_int32) > 0)
-    mask_rois_num = paddle.to_tensor(mask_rois_num, dtype='int32')
+    mask_rois_num = paddle.concat(mask_rois_num)
     tgt_classes = paddle.concat(tgt_classes, axis=0)
     tgt_masks = paddle.concat(tgt_masks, axis=0)
     tgt_weights = paddle.concat(tgt_weights, axis=0)

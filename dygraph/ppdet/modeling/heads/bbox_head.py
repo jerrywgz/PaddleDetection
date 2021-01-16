@@ -238,7 +238,6 @@ class BBoxHead(nn.Layer):
         proposal, proposal_num = rois
         score, delta = bbox_head_out
         bbox_prob = F.softmax(score)
-        delta = paddle.reshape(delta, (-1, self.delta_dim, 4))
         bbox_pred = (delta, bbox_prob)
         return bbox_pred, rois
 

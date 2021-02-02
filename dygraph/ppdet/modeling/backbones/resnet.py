@@ -527,6 +527,7 @@ class ResNet(nn.Layer):
 
     def forward(self, inputs):
         x = inputs['image']
+        print('image: ', x)
         conv1 = self.conv1(x)
         x = F.max_pool2d(conv1, kernel_size=3, stride=2, padding=1)
         outs = []
@@ -536,6 +537,7 @@ class ResNet(nn.Layer):
                 x.stop_gradient = True
             if idx in self.return_idx:
                 outs.append(x)
+                print('backbone x: ', x.abs().mean())
         return outs
 
 
@@ -547,11 +549,8 @@ class Res5Head(nn.Layer):
         if depth < 50:
             feat_in = 256
         na = NameAdapter(self)
-        self.res5 = self.add_sublayer(
-            'res5_roi_feat',
-            Blocks(
-                depth, feat_in, feat_out, count=3, name_adapter=na,
-                stage_num=5))
+        self.res5 = Blocks(
+            depth, feat_in, feat_out, count=3, name_adapter=na, stage_num=5)
         self.feat_out = feat_out if depth < 50 else feat_out * 4
 
     @property
